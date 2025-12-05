@@ -5,18 +5,30 @@ export const useUserStore = defineStore('user', () => {
   // Initialize from localStorage if available
   const token = ref(localStorage.getItem('exam-token') || '')
   const role = ref(localStorage.getItem('user-role') || '') 
-  const userInfo = ref(JSON.parse(localStorage.getItem('user-info') || '{"name":"User","avatar":""}'))
+  const userInfo = ref(JSON.parse(localStorage.getItem('user-info') || '{}'))
 
-  function login(userRole, userData) {
-    const mockToken = 'mock-token-' + Date.now()
-    token.value = mockToken
-    role.value = userRole
-    userInfo.value = userData
+  const roleMap = {
+    1: 'admin',
+    2: 'teacher',
+    3: 'student'
+  }
+
+  // 纯粹的状态更新，不涉及 API 调用
+  function setLoginState(data) {
+    token.value = data.token
+    // Map integer role from backend to string role for frontend
+    const roleStr = roleMap[data.role] || 'student' 
+    role.value = roleStr
+    
+    userInfo.value = {
+      name: data.name,
+      id: data.id
+    }
     
     // Save to localStorage
-    localStorage.setItem('exam-token', mockToken)
-    localStorage.setItem('user-role', userRole)
-    localStorage.setItem('user-info', JSON.stringify(userData))
+    localStorage.setItem('exam-token', data.token)
+    localStorage.setItem('user-role', roleStr)
+    localStorage.setItem('user-info', JSON.stringify(userInfo.value))
   }
 
   function logout() {
@@ -30,5 +42,5 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('user-info')
   }
 
-  return { token, role, userInfo, login, logout }
+  return { token, role, userInfo, setLoginState, logout }
 })

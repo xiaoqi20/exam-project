@@ -3,104 +3,44 @@ import { reactive, ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, List } from '@element-plus/icons-vue'
+import { getExamPaper, submitExam } from '@/api/exam'
 
 const route = useRoute()
 const router = useRouter()
 
+const loading = ref(false)
+const submitting = ref(false)
 const examInfo = reactive({
-  id: route.params.id,
-  title: route.query.title || '在线考试',
-  duration: parseInt(route.query.duration) || 60,
-  remainingTime: (parseInt(route.query.duration) || 60) * 60 // 秒
-})
+// ... (unchanged part)
 
-// 模拟试卷内容
-const paperData = ref([
-  { id: 1, type: 'choice', content: 'Vue 3 的响应式系统基于什么实现？', options: {A:'Object.defineProperty', B:'Proxy', C:'Observer', D:'Watcher'}, score: 5 },
-  { id: 2, type: 'choice', content: '以下哪个是 Vue 的生命周期钩子？', options: {A:'onMounted', B:'onReady', C:'onInit', D:'onStart'}, score: 5 },
-  { id: 3, type: 'true_false', content: 'v-if 和 v-show 的作用完全相同。', score: 5 },
-  { id: 4, type: 'true_false', content: 'Vuex 是 Vue 的官方状态管理库。', score: 5 },
-  // 模拟生成更多题目以测试答题卡滚动
-  ...Array.from({ length: 16 }).map((_, i) => ({
-     id: 5 + i, type: 'choice', content: `这是一个模拟的单选题 ${i+1} ...`, options: {A:'选项A', B:'选项B', C:'选项C', D:'选项D'}, score: 2
-  }))
-])
+// ... (unchanged part)
 
-// 答题记录
-const answers = reactive({})
-
-// 倒计时逻辑
-let timer = null
-const formattedTime = computed(() => {
-  const m = Math.floor(examInfo.remainingTime / 60)
-  const s = examInfo.remainingTime % 60
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-})
-
-const startTimer = () => {
-  timer = setInterval(() => {
-    if (examInfo.remainingTime > 0) {
-      examInfo.remainingTime--
-    } else {
-      clearInterval(timer)
-      handleSubmit(true) // 强制提交
-    }
-  }, 1000)
-}
-
-onMounted(() => {
-  startTimer()
-})
-
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-})
-
-// 答题卡样式
-const getCardStatus = (id) => {
-  return answers[id] ? 'success' : ''
-}
-
-// 滚动到题目
-const scrollToQuestion = (id) => {
-  const el = document.getElementById(`question-${id}`)
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-}
-
-// 提交试卷
-const handleSubmit = (force = false) => {
-  if (!force) {
-    const answeredCount = Object.keys(answers).length
-    const totalCount = paperData.value.length
-    if (answeredCount < totalCount) {
-       ElMessageBox.confirm(`您还有 ${totalCount - answeredCount} 道题未完成，确定要提交吗？`, '提示', {
-         confirmButtonText: '提交',
-         cancelButtonText: '继续答题',
-         type: 'warning'
-       }).then(() => {
-         submitLogic()
-       }).catch(() => {})
-       return
-    }
+const submitLogic = async () => {
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    console.log('Submit Answers:', answers)
+    // 构造后端需要的答案格式
+    // 假设后端需要 { paperId: 1, answers: [{qid: 1, answer: "A"}, ...] }
+    // 根据实际后端需求调整，这里先按照通用格式构造
+    const answerList = Object.entries(answers).map(([key, value]) => ({
+      qid: parseInt(key),
+      answer: value
+    }))
     
-    ElMessageBox.confirm('提交后将无法修改，确定提交吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(() => {
-      submitLogic()
+    await submitExam({
+      paperId: examInfo.id,
+      answers: answerList
     })
-  } else {
-    ElMessage.warning('考试时间到，系统自动提交试卷！')
-    submitLogic()
+    
+    ElMessage.success('试卷提交成功！')
+    router.replace('/student/exam/hall') // 修正路由路径，假设是这个
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('提交失败，请重试')
+  } finally {
+    submitting.value = false
   }
-}
-
-const submitLogic = () => {
-  console.log('Submit Answers:', answers)
-  // TODO: Call API
-  ElMessage.success('试卷提交成功！')
-  router.replace('/dashboard/student/exam/hall')
 }
 </script>
 

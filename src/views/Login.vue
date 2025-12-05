@@ -2,12 +2,14 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { login } from '@/api/auth'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const userStore = useUserStore()
 const loginFormRef = ref(null)
+const loading = ref(false)
 
 const loginForm = reactive({
   username: '',
@@ -21,20 +23,34 @@ const rules = {
   role: [{ required: true, message: '请选择角色', trigger: 'change' }]
 }
 
+const roleMapReverse = {
+  'admin': 1,
+  'teacher': 2,
+  'student': 3
+}
+
 const handleLogin = async (formEl) => {
   if (!formEl) return
-  await formEl.validate((valid, fields) => {
+  await formEl.validate(async (valid, fields) => {
     if (valid) {
-      console.log('submit!', loginForm)
-      // 模拟登录逻辑
-      // 实际应调用 API 验证
-      userStore.login(loginForm.role, {
-        name: loginForm.username,
-        avatar: 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png'
-      })
-      
-      ElMessage.success('登录成功')
-      router.push('/dashboard') 
+      loading.value = true
+      try {
+        const res = await login({
+          username: loginForm.username,
+          password: loginForm.password,
+          role: roleMapReverse[loginForm.role]
+        })
+        
+        // 登录成功，更新状态
+        userStore.setLoginState(res)
+        
+        ElMessage.success('登录成功')
+        router.push('/dashboard')
+      } catch (error) {
+        console.error(error)
+      } finally {
+        loading.value = false
+      }
     } else {
       console.log('error submit!', fields)
       return false
@@ -86,7 +102,7 @@ const handleLogin = async (formEl) => {
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" class="login-button" @click="handleLogin(loginFormRef)">
+          <el-button type="primary" :loading="loading" class="login-button" @click="handleLogin(loginFormRef)">
             登录
           </el-button>
         </el-form-item>
