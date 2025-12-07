@@ -1,26 +1,22 @@
 <script setup>
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { Search, Plus, Edit, Delete, Refresh, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as pdfjsLib from 'pdfjs-dist'
+import { getQuestionList, addQuestion, updateQuestion, deleteQuestion } from '@/api/question'
 
 // 设置 PDF.js worker
-// 使用 unpkg CDN 确保版本匹配
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
-// 模拟试题数据源
-const sourceData = [
-  { id: 101, type: 'choice', content: 'HTML 是什么语言的缩写？', options: JSON.stringify({A:'超文本标记语言', B:'家庭工具标记语言', C:'高科技语言', D:'以上都不是'}), answer: 'A', score: 2 },
-  { id: 102, type: 'true_false', content: 'Vue 3 使用 Options API 作为主要的 API 风格。', options: null, answer: 'False', score: 2 },
-  { id: 103, type: 'choice', content: '以下哪个钩子函数在 Vue 3 中已被移除？', options: JSON.stringify({A:'created', B:'mounted', C:'beforeDestroy', D:'updated'}), answer: 'C', score: 5 },
-]
-
-// 响应式表格数据
-const tableData = ref([...sourceData])
+const tableData = ref([])
+const total = ref(0)
+const loading = ref(false)
 const fileInputRef = ref(null)
 const isImporting = ref(false)
 
 const queryParams = reactive({
+  page: 1,
+  size: 10,
   content: '',
   type: ''
 })
@@ -35,54 +31,73 @@ const form = reactive({
   type: 'choice',
   content: '',
   score: 2,
-  // 选项列表 (仅针对选择题)
   options: [
     { key: 'A', value: '' },
     { key: 'B', value: '' },
     { key: 'C', value: '' },
     { key: 'D', value: '' }
   ],
-  answer: ''
+  answer: '', 
+  answerArr: []
 })
 
 const rules = {
   type: [{ required: true, message: '请选择题型', trigger: 'change' }],
   content: [{ required: true, message: '请输入题目内容', trigger: 'blur' }],
   score: [{ required: true, message: '请输入分值', trigger: 'blur' }],
-  answer: [{ required: true, message: '请设置正确答案', trigger: 'change' }]
 }
 
-// 题型字典
 const typeOptions = [
   { label: '单选题', value: 'choice' },
+  { label: '多选题', value: 'multiple_choice' },
   { label: '判断题', value: 'true_false' }
 ]
 
-// 格式化选项显示
 const formatOptions = (row) => {
   if (row.type === 'true_false') return '-'
   try {
-    const opts = JSON.parse(row.options)
+    const opts = typeof row.options === 'string' ? JSON.parse(row.options) : row.options
+    if (!opts) return '-'
     return Object.entries(opts).map(([k, v]) => `${k}: ${v}`).join('; ')
   } catch (e) {
-    return row.options
+    return row.options || '-'
   }
 }
 
-// 查询
+// 加载数据
+const loadData = async () => {
+  loading.value = true
+  try {
+    const res = await getQuestionList(queryParams)
+    if (res && res.records) {
+        tableData.value = res.records
+        total.value = res.total
+    } else {
+        tableData.value = []
+        total.value = 0
+    }
+  } catch (error) {
+    console.error('Failed to load questions:', error)
+    ElMessage.error('加载试题失败')
+  } finally {
+    loading.value = false
+  }
+}
+
 const handleQuery = () => {
-  tableData.value = sourceData.filter(item => {
-    const matchContent = !queryParams.content || item.content.toLowerCase().includes(queryParams.content.toLowerCase())
-    const matchType = !queryParams.type || item.type === queryParams.type
-    return matchContent && matchType
-  })
-  ElMessage.success('查询成功')
+  queryParams.page = 1
+  loadData()
 }
 
 const handleReset = () => {
   queryParams.content = ''
   queryParams.type = ''
   handleQuery()
+}
+
+const handlePageChange = (page) => {
+    queryParams.page = page
+    loadData()
 }
 
 // 新增
@@ -100,17 +115,16 @@ const handleAdd = () => {
       { key: 'C', value: '' },
       { key: 'D', value: '' }
     ],
-    answer: ''
+    answer: '',
+    answerArr: []
   })
   if (formRef.value) formRef.value.clearValidate()
 }
 
-// 编辑
 const handleEdit = (row) => {
   dialogTitle.value = '编辑试题'
   dialogVisible.value = true
   
-  // 解析 options
   let parsedOptions = [
     { key: 'A', value: '' },
     { key: 'B', value: '' },
@@ -118,75 +132,107 @@ const handleEdit = (row) => {
     { key: 'D', value: '' }
   ]
   
-  if (row.type === 'choice' && row.options) {
+  if ((row.type === 'choice' || row.type === 'multiple_choice') && row.options) {
     try {
-      const opts = JSON.parse(row.options)
+      const opts = typeof row.options === 'string' ? JSON.parse(row.options) : row.options
       parsedOptions = Object.keys(opts).map(k => ({ key: k, value: opts[k] }))
     } catch (e) {
       console.error(e)
     }
   }
 
+  let initialAnswerArr = []
+  if (row.type === 'multiple_choice' && row.answer) {
+      initialAnswerArr = row.answer.split('')
+  }
+
   Object.assign(form, {
     ...row,
-    options: parsedOptions
+    options: parsedOptions,
+    answerArr: initialAnswerArr
   })
   
   if (formRef.value) formRef.value.clearValidate()
 }
 
-// 删除
 const handleDelete = (row) => {
   ElMessageBox.confirm('确定删除该试题吗？', '提示', { type: 'warning' })
-    .then(() => {
-      tableData.value = tableData.value.filter(item => item.id !== row.id)
+    .then(async () => {
+      await deleteQuestion(row.id)
       ElMessage.success('删除成功')
+      loadData()
     })
-    .catch(() => {})
+    .catch(() => {}) // No-op on cancel
 }
 
-// 提交
+// 动态选项操作
+const addOption = () => {
+    const keys = ['A','B','C','D','E','F','G','H','I','J']
+    const nextIdx = form.options.length
+    if (nextIdx >= keys.length) return
+    form.options.push({ key: keys[nextIdx], value: '' })
+}
+
+const removeOption = (index) => {
+    if (form.options.length <= 2) return
+    form.options.splice(index, 1)
+    const keys = ['A','B','C','D','E','F','G','H','I','J']
+    form.options.forEach((opt, idx) => { opt.key = keys[idx] })
+}
+
 const handleSubmit = async () => {
   if (!formRef.value) return
-  await formRef.value.validate((valid) => {
+  await formRef.value.validate(async (valid) => {
+    let answerValid = true
+    if (form.type === 'choice' || form.type === 'true_false') {
+        if (!form.answer) answerValid = false
+    } else if (form.type === 'multiple_choice') {
+        if (!form.answerArr || form.answerArr.length === 0) answerValid = false
+    }
+    
+    if (!answerValid) {
+        ElMessage.error('请设置正确答案')
+        return
+    }
+
     if (valid) {
-      // 转换数据格式
+      let finalAnswer = form.answer
+      if (form.type === 'multiple_choice') {
+          finalAnswer = form.answerArr.sort().join('')
+      }
+
       const saveData = {
-        ...form,
-        options: form.type === 'choice' 
+        id: form.id, 
+        type: form.type,
+        content: form.content,
+        score: form.score,
+        answer: finalAnswer,
+        options: (form.type === 'choice' || form.type === 'multiple_choice')
           ? JSON.stringify(form.options.reduce((acc, cur) => ({...acc, [cur.key]: cur.value}), {})) 
           : null
       }
 
-      if (form.id) {
-        const index = tableData.value.findIndex(item => item.id === form.id)
-        if (index !== -1) tableData.value[index] = saveData
-        ElMessage.success('修改成功')
-      } else {
-        const newId = Math.max(...tableData.value.map(item => item.id)) + 1
-        tableData.value.push({ ...saveData, id: newId })
-        ElMessage.success('添加成功')
+      try {
+          if (form.id) {
+              await updateQuestion(saveData)
+              ElMessage.success('修改成功')
+          } else {
+              await addQuestion(saveData)
+              ElMessage.success('添加成功')
+          }
+          dialogVisible.value = false
+          loadData()
+      } catch (e) {
+          ElMessage.error('操作失败')
       }
-      dialogVisible.value = false
     }
   })
 }
 
-// 批量导入相关
-const handleBatchImport = () => {
-  console.log('Triggering file input click...')
-  if (fileInputRef.value) {
-    fileInputRef.value.click()
-  } else {
-    console.error('File input ref is null')
-  }
-}
-
+// PDF Import Logic (Simplified for now, needs real API integration later if needed)
 const onFileChange = async (event) => {
-  console.log('File selected:', event.target.files)
   const file = event.target.files[0]
   if (!file) return
-  
   if (file.type !== 'application/pdf') {
     ElMessage.error('请上传 PDF 文件')
     return
@@ -194,158 +240,34 @@ const onFileChange = async (event) => {
 
   isImporting.value = true
   try {
-    console.log('Reading PDF file...')
     const arrayBuffer = await file.arrayBuffer()
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
     const pdf = await loadingTask.promise
-    console.log(`PDF loaded. Pages: ${pdf.numPages}`)
     
     let fullText = ''
-
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
       const textContent = await page.getTextContent()
-      const pageText = textContent.items.map(item => item.str).join('\n')
-      fullText += pageText + '\n'
+      fullText += textContent.items.map(item => item.str).join('\n') + '\n'
     }
-
-    console.log('Parsing text:', fullText.substring(0, 100) + '...')
-    parseAndAddQuestions(fullText)
-    ElMessage.success('批量导入成功')
+    
+    // TODO: Parse text and call addQuestion API for each
+    ElMessage.warning('PDF解析功能待升级对接后端')
+    
   } catch (error) {
     console.error('Error reading PDF:', error)
-    ElMessage.error('导入失败，请检查 PDF 文件格式或网络环境 (PDF Worker)')
+    ElMessage.error('导入失败')
   } finally {
     isImporting.value = false
-    // Reset input
     event.target.value = ''
   }
 }
 
-const parseAndAddQuestions = (text) => {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l)
-  let currentQuestion = null
-  let newQuestions = []
-  
-  // 匹配题目开始：数字 + 点 + (可选的类型标识)
-  // 兼容 "1.【单选题】（2分）" 或 "1. (2分)" 等格式
-  const questionStartRegex = /^(\d+)\s*[.、．]?\s*(?:【(.*?)】)?(?:\（(\d+)分\）)?\s*(.*)/
-  
-  // 匹配选项：A/B/C/D 开头，或者 圆圈字符 (OCR有时会识别出)
-  const optionRegex = /^([A-D])\s*[.、．]?\s*(.*)/
-  
-  // 匹配判断题选项 (对/错)
-  const judgmentOptionRegex = /^(对|错|正确|错误)$/
+const handleBatchImport = () => { if (fileInputRef.value) fileInputRef.value.click() }
 
-  // 匹配答案（支持 "参考答案"、"答案"、"Answer" 等）
-  const answerRegex = /^(?:参考答案|答案|Answer)\s*[:：]\s*([A-D]|True|False|对|错|√|×)/i
-
-  lines.forEach((line, index) => {
-    // 尝试匹配题目开始
-    const qMatch = line.match(questionStartRegex)
-    
-    if (qMatch) {
-      // 保存上一个题目
-      if (currentQuestion) newQuestions.push(currentQuestion)
-      
-      // 提取题目内容
-      let content = qMatch[4] || ''
-      
-      // 修正：如果这一行只有 "1.【单选题】（2分）"，内容其实在下一行
-      // 简单的预读策略：如果 content 为空，且下一行不是选项，也不是答案，也不是新题目，则认为是内容
-      if (!content && index + 1 < lines.length) {
-         const nextLine = lines[index+1]
-         if (!nextLine.match(optionRegex) && !nextLine.match(questionStartRegex) && !nextLine.match(answerRegex)) {
-             // 这一行将在后续被 currentQuestion.content 捕获，或者这里直接处理？
-             // 这里的逻辑是构造 currentQuestion 时读取 nextLine
-         }
-      }
-
-      let type = 'choice'
-      if (line.includes('判断题')) type = 'true_false'
-      else if (line.includes('单选题') || line.includes('多选题')) type = 'choice'
-
-      currentQuestion = {
-        id: Date.now() + Math.random(),
-        type: type,
-        // 尝试获取内容：当前行内容 OR 下一行内容
-        content: content || (lines[index+1] && !lines[index+1].match(optionRegex) && !lines[index+1].match(answerRegex) ? lines[index+1] : '题目内容解析失败'),
-        options: {},
-        answer: '', 
-        score: qMatch[3] ? parseInt(qMatch[3]) : 2
-      }
-      return
-    }
-
-    if (!currentQuestion) return
-
-    // 匹配选项
-    const oMatch = line.match(optionRegex)
-    if (oMatch && currentQuestion.type === 'choice') {
-      currentQuestion.options[oMatch[1]] = oMatch[2]
-      return
-    }
-
-    // 匹配判断题选项
-    // 有些PDF会把 "A 对" "B 错" 当作选项列出，或者直接 "对" "错"
-    if (judgmentOptionRegex.test(line) && currentQuestion.type === 'true_false') {
-       return
-    }
-
-    // 匹配答案
-    const aMatch = line.match(answerRegex)
-    if (aMatch) {
-      let ans = aMatch[1]
-      if (ans === '对' || ans === '正确' || ans === '√') ans = 'True'
-      if (ans === '错' || ans === '错误' || ans === '×') ans = 'False'
-      currentQuestion.answer = ans
-      return
-    }
-    
-    // 拼接多行题目内容
-    // 如果当前行不是题目开始、不是选项、不是答案，且上一行是题目（content可能不完整）
-    // 并且当前行看起来不像是页眉页脚
-    if (currentQuestion && !qMatch && !oMatch && !aMatch && !judgmentOptionRegex.test(line)) {
-       // 排除常见页眉页脚和无关文本
-       const ignoreKeywords = ['数据库系统原理', '导出时间', '阶段测试', '单选题', '多选题', '判断题', '页码', 'Page'];
-       const isHeader = ignoreKeywords.some(kw => line.includes(kw));
-       
-       // 排除纯数字（可能是页码）
-       const isPageNumber = /^\d+$/.test(line);
-
-       if (!isHeader && !isPageNumber && line.length > 1) {
-          // 如果已经有选项了，通常不再追加内容到 content (防止把页脚拼接到题目里)
-          // 除非 PDF 排版非常乱，内容在选项之后（少见）
-          // 但为了安全，如果 options 已经有值，我们停止拼接 content
-          if (Object.keys(currentQuestion.options).length === 0) {
-             currentQuestion.content += (currentQuestion.content ? '\n' : '') + line;
-          }
-       }
-    }
-  })
-
-  if (currentQuestion) newQuestions.push(currentQuestion)
-
-  // 过滤掉无效题目
-  const validQuestions = newQuestions.filter(q => q.content && q.content !== '题目内容解析失败')
-
-  // 添加到列表
-  validQuestions.forEach(q => {
-    if (q.type === 'choice') {
-      q.options = JSON.stringify(q.options)
-    } else {
-      q.options = null
-    }
-    sourceData.push(q)
-  })
-  
-  tableData.value = [...sourceData]
-  if (validQuestions.length === 0) {
-     ElMessage.warning('未识别到有效题目，请检查PDF格式')
-  } else {
-     ElMessage.success(`成功导入 ${validQuestions.length} 道题目`)
-  }
-}
+onMounted(() => {
+    loadData()
+})
 </script>
 
 <template>
@@ -354,7 +276,7 @@ const parseAndAddQuestions = (text) => {
     <el-card class="filter-container" shadow="never">
       <el-form :inline="true" :model="queryParams">
         <el-form-item label="题目内容">
-          <el-input v-model="queryParams.content" placeholder="关键词" clearable @keyup.enter="handleQuery"/>
+          <el-input v-model="queryParams.content" placeholder="关键词" clearable />
         </el-form-item>
         <el-form-item label="题型">
           <el-select v-model="queryParams.type" placeholder="全部" clearable style="width: 120px">
@@ -376,12 +298,13 @@ const parseAndAddQuestions = (text) => {
         <input type="file" ref="fileInputRef" accept="application/pdf" style="display: none" @change="onFileChange" />
       </div>
 
-      <el-table :data="tableData" border stripe>
+      <el-table :data="tableData" border stripe v-loading="loading">
+        <!-- Columns -->
         <el-table-column prop="id" label="编号" width="80" sortable />
         <el-table-column prop="type" label="题型" width="100">
           <template #default="scope">
-            <el-tag :type="scope.row.type === 'choice' ? '' : 'warning'">
-              {{ scope.row.type === 'choice' ? '单选题' : '判断题' }}
+            <el-tag :type="scope.row.type === 'choice' ? '' : (scope.row.type === 'multiple_choice' ? 'success' : 'warning')">
+              {{ scope.row.type === 'choice' ? '单选题' : (scope.row.type === 'multiple_choice' ? '多选题' : '判断题') }}
             </el-tag>
           </template>
         </el-table-column>
@@ -395,8 +318,8 @@ const parseAndAddQuestions = (text) => {
         <el-table-column prop="answer" label="答案" width="80" align="center">
              <template #default="scope">
                 <span v-if="scope.row.type === 'true_false'">
-                    <el-tag :type="scope.row.answer === 'True' ? 'success' : 'danger'">
-                         {{ scope.row.answer === 'True' ? '正确' : '错误' }}
+                    <el-tag :type="scope.row.answer === 'True' || scope.row.answer === 'A' ? 'success' : 'danger'">
+                         {{ (scope.row.answer === 'True' || scope.row.answer === 'A') ? '正确' : '错误' }}
                     </el-tag>
                 </span>
                 <span v-else>{{ scope.row.answer }}</span>
@@ -409,6 +332,20 @@ const parseAndAddQuestions = (text) => {
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- Pagination -->
+      <div class="pagination-container">
+          <el-pagination
+            v-model:current-page="queryParams.page"
+            v-model:page-size="queryParams.size"
+            :total="total"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="loadData"
+            @current-change="handlePageChange"
+            background
+          />
+      </div>
     </el-card>
 
     <!-- 弹窗 -->
@@ -417,6 +354,7 @@ const parseAndAddQuestions = (text) => {
         <el-form-item label="题型" prop="type">
           <el-radio-group v-model="form.type">
             <el-radio label="choice">单选题</el-radio>
+            <el-radio label="multiple_choice">多选题</el-radio>
             <el-radio label="true_false">判断题</el-radio>
           </el-radio-group>
         </el-form-item>
@@ -434,8 +372,8 @@ const parseAndAddQuestions = (text) => {
           />
         </el-form-item>
 
-        <!-- 单选题选项 -->
-        <template v-if="form.type === 'choice'">
+        <!-- 选择题/多选题选项 -->
+        <template v-if="form.type === 'choice' || form.type === 'multiple_choice'">
           <el-divider content-position="left">选项设置</el-divider>
           <el-form-item 
             v-for="(item, index) in form.options" 
@@ -444,11 +382,21 @@ const parseAndAddQuestions = (text) => {
             :prop="'options.' + index + '.value'"
             :rules="{ required: true, message: '请输入选项内容', trigger: 'blur' }"
           >
-            <el-input v-model="item.value" placeholder="请输入选项内容">
-               <template #prepend>
-                  <el-radio v-model="form.answer" :label="item.key">{{ item.key }}</el-radio>
-               </template>
-            </el-input>
+            <div style="display: flex; width: 100%; gap: 10px;">
+                <el-input v-model="item.value" placeholder="请输入选项内容">
+                    <template #prepend>
+                        <!-- 单选模式 -->
+                        <el-radio v-if="form.type === 'choice'" key="radio-mode" v-model="form.answer" :label="item.key">{{ item.key }}</el-radio>
+                        <!-- 多选模式 -->
+                        <el-checkbox v-else key="checkbox-mode" v-model="form.answerArr" :label="item.key">{{ item.key }}</el-checkbox>
+                    </template>
+                </el-input>
+                <el-button v-if="index > 1" type="danger" :icon="Delete" circle plain @click="removeOption(index)" />
+            </div>
+          </el-form-item>
+          
+          <el-form-item>
+              <el-button type="primary" plain :icon="Plus" @click="addOption" size="small">添加选项</el-button>
           </el-form-item>
         </template>
 
@@ -473,4 +421,5 @@ const parseAndAddQuestions = (text) => {
 .app-container { padding: 20px; }
 .filter-container { margin-bottom: 20px; }
 .table-toolbar { margin-bottom: 15px; }
+.pagination-container { margin-top: 20px; display: flex; justify-content: flex-end; }
 </style>

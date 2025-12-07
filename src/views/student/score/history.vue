@@ -1,63 +1,56 @@
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, View, Refresh } from '@element-plus/icons-vue'
+import { getScoreHistory } from '@/api/exam'
+import { useUserStore } from '@/stores/user'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+const userStore = useUserStore()
 
-// 原始模拟数据
-const sourceData = [
-  { 
-    id: 101, 
-    title: '计算机网络期中测试', 
-    examTime: '2025-11-10 14:00', 
-    submitTime: '2025-11-10 15:30', 
-    duration: 90, 
-    score: 85, 
-    totalScore: 100,
-    passScore: 60 
-  },
-  { 
-    id: 102, 
-    title: 'Java 基础语法测验', 
-    examTime: '2025-11-05 09:00', 
-    submitTime: '2025-11-05 09:45', 
-    duration: 45, 
-    score: 58, 
-    totalScore: 100,
-    passScore: 60 
-  },
-  { 
-    id: 103, 
-    title: '马克思主义基本原理', 
-    examTime: '2025-10-20 10:00', 
-    submitTime: '2025-10-20 11:30', 
-    duration: 88, 
-    score: 92, 
-    totalScore: 100,
-    passScore: 60 
-  }
-]
-
-// 响应式表格数据
-const tableData = ref([...sourceData])
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
 
 const queryParams = reactive({
-  title: ''
+  page: 1,
+  size: 10,
+  search: ''
 })
 
-const handleQuery = () => {
-  if (!queryParams.title) {
-    tableData.value = [...sourceData]
-  } else {
-    tableData.value = sourceData.filter(item => 
-      item.title.toLowerCase().includes(queryParams.title.toLowerCase())
-    )
+const loadData = async () => {
+  loading.value = true
+  try {
+    // userStore.userInfo.id is assumed to be the studentId (e.g., "S202301")
+    const res = await getScoreHistory(userStore.userInfo.id, {
+        page: queryParams.page,
+        size: queryParams.size,
+        search: queryParams.search || undefined
+    })
+    
+    if (res && res.records) {
+        tableData.value = res.records
+        total.value = res.total
+    } else {
+        tableData.value = []
+        total.value = 0
+    }
+  } catch (error) {
+    console.error('Failed to load score history:', error)
+    ElMessage.error('加载成绩记录失败')
+  } finally {
+    loading.value = false
   }
 }
 
+const handleQuery = () => {
+  queryParams.page = 1
+  loadData()
+}
+
 const handleReset = () => {
-  queryParams.title = ''
+  queryParams.search = ''
   handleQuery()
 }
 
@@ -68,6 +61,37 @@ const handleViewDetail = (row) => {
     query: { title: row.title, score: row.score }
   })
 }
+
+const handlePageChange = (page) => {
+    queryParams.page = page
+    loadData()
+}
+
+const formatExamTime = (row) => {
+  if (row.examTime) return row.examTime
+  if (row.submitTime && row.duration) {
+    // Fallback: calculate from submitTime - duration
+    try {
+      // Handle "YYYY-MM-DD HH:mm:ss" format manually or via Date
+      // Assuming standard format compatible with Date constructor or need simple parsing
+      const submitDate = new Date(row.submitTime.replace(/-/g, '/')) 
+      if (isNaN(submitDate.getTime())) return '--'
+      
+      const startTime = new Date(submitDate.getTime() - row.duration * 60 * 1000)
+      
+      // Simple manual formatting to YYYY-MM-DD HH:mm:ss
+      const pad = (n) => n.toString().padStart(2, '0')
+      return `${startTime.getFullYear()}-${pad(startTime.getMonth() + 1)}-${pad(startTime.getDate())} ${pad(startTime.getHours())}:${pad(startTime.getMinutes())}:${pad(startTime.getSeconds())}`
+    } catch (e) {
+      return '--'
+    }
+  }
+  return '--'
+}
+
+onMounted(() => {
+    loadData()
+})
 </script>
 
 <template>
@@ -75,7 +99,7 @@ const handleViewDetail = (row) => {
     <el-card class="filter-container" shadow="never">
       <el-form :inline="true" :model="queryParams">
         <el-form-item label="试卷名称">
-          <el-input v-model="queryParams.title" placeholder="请输入试卷名称" clearable @keyup.enter="handleQuery" />
+          <el-input v-model="queryParams.search" placeholder="请输入试卷名称" clearable @keyup.enter="handleQuery" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :icon="Search" @click="handleQuery">搜索</el-button>
@@ -85,10 +109,14 @@ const handleViewDetail = (row) => {
     </el-card>
 
     <el-card class="table-container" shadow="never">
-      <el-table :data="tableData" border stripe>
+      <el-table :data="tableData" border stripe v-loading="loading">
         <el-table-column prop="title" label="试卷名称" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="examTime" label="考试时间" width="160" sortable />
-        <el-table-column prop="submitTime" label="交卷时间" width="160" />
+        <el-table-column prop="examTime" label="考试时间" width="180">
+           <template #default="scope">
+             {{ formatExamTime(scope.row) }}
+           </template>
+        </el-table-column>
+        <el-table-column prop="submitTime" label="交卷时间" width="180" sortable />
         <el-table-column prop="duration" label="耗时(分)" width="100" align="center" />
         <el-table-column prop="score" label="得分" width="100" align="center" sortable>
           <template #default="scope">
@@ -111,6 +139,17 @@ const handleViewDetail = (row) => {
           </template>
         </el-table-column>
       </el-table>
+      
+      <div class="pagination-container">
+          <el-pagination
+            v-model:current-page="queryParams.page"
+            :page-size="queryParams.size"
+            :total="total"
+            layout="total, prev, pager, next"
+            @current-change="handlePageChange"
+            background
+          />
+      </div>
     </el-card>
   </div>
 </template>
@@ -118,7 +157,9 @@ const handleViewDetail = (row) => {
 <style scoped>
 .app-container { padding: 20px; }
 .filter-container { margin-bottom: 20px; }
+.table-container { padding-bottom: 20px; }
 .text-success { color: #67C23A; font-weight: bold; font-size: 16px; }
 .text-danger { color: #F56C6C; font-weight: bold; font-size: 16px; }
 .total-score { color: #909399; font-size: 12px; }
+.pagination-container { margin-top: 20px; display: flex; justify-content: flex-end; }
 </style>
