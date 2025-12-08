@@ -11,7 +11,7 @@ export function getQuestionList(params) {
 // 预留其他接口，待后端实现
 export function addQuestion(data) {
   return request({
-    url: '/question/add',
+    url: '/question',
     method: 'post',
     data
   })
@@ -19,7 +19,7 @@ export function addQuestion(data) {
 
 export function updateQuestion(data) {
   return request({
-    url: '/question/update',
+    url: '/question',
     method: 'put',
     data
   })
@@ -27,7 +27,7 @@ export function updateQuestion(data) {
 
 export function deleteQuestion(id) {
   return request({
-    url: `/question/delete/${id}`,
+    url: `/question/${id}`,
     method: 'delete'
   })
 }

@@ -196,22 +196,32 @@ const handleSubmit = async () => {
     }
 
     if (valid) {
-      let finalAnswer = form.answer
-      if (form.type === 'multiple_choice') {
-          finalAnswer = form.answerArr.sort().join('')
-      }
-
-      const saveData = {
-        id: form.id, 
-        type: form.type,
-        content: form.content,
-        score: form.score,
-        answer: finalAnswer,
-        options: (form.type === 'choice' || form.type === 'multiple_choice')
-          ? JSON.stringify(form.options.reduce((acc, cur) => ({...acc, [cur.key]: cur.value}), {})) 
-          : null
-      }
-
+            // 转换数据格式
+            let finalAnswer = form.answer
+            let finalOptions = null
+      
+            if (form.type === 'multiple_choice') {
+                // Sort answers to ensure "AB" not "BA"
+                finalAnswer = form.answerArr.sort().join('')
+                finalOptions = JSON.stringify(form.options.reduce((acc, cur) => ({...acc, [cur.key]: cur.value}), {}))
+            } else if (form.type === 'choice') {
+                finalOptions = JSON.stringify(form.options.reduce((acc, cur) => ({...acc, [cur.key]: cur.value}), {}))
+            } else if (form.type === 'true_false') {
+                // Explicitly set options for true/false
+                finalOptions = JSON.stringify({ A: '正确', B: '错误' })
+                // Map frontend True/False to backend A/B
+                if (finalAnswer === 'True') finalAnswer = 'A'
+                if (finalAnswer === 'False') finalAnswer = 'B'
+            }
+      
+            const saveData = {
+              id: form.id,
+              type: form.type,
+              content: form.content,
+              score: form.score,
+              answer: finalAnswer,
+              options: finalOptions
+            }
       try {
           if (form.id) {
               await updateQuestion(saveData)
