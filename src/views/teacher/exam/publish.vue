@@ -1,49 +1,65 @@
 <script setup>
-import { reactive, ref } from 'vue'
-import { Search, Edit, Delete, Timer, VideoPlay, VideoPause } from '@element-plus/icons-vue'
+import { reactive, ref, onMounted } from 'vue'
+import { Search, Edit, Delete, VideoPlay, VideoPause, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getExamPaperList, publishExamPaper } from '@/api/examPaper'
 
-// 模拟试卷数据
-const tableData = ref([
-  { id: 201, title: '2024-2025第一学期期末考试', duration: 90, totalScore: 100, status: 'draft', startTime: '', endTime: '' },
-  { id: 202, title: 'Java 程序设计月考', duration: 60, totalScore: 100, status: 'published', startTime: '2025-12-01 09:00:00', endTime: '2025-12-01 11:00:00' },
-  { id: 203, title: '计算机网络基础测验', duration: 45, totalScore: 100, status: 'ended', startTime: '2025-11-01 14:00:00', endTime: '2025-11-01 16:00:00' },
-])
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
 
 const queryParams = reactive({
+  page: 1,
+  size: 10,
   title: '',
-  status: ''
+  status: '' // Backend support for filtering by status? If not, we filter locally or ignore.
 })
-
-// 发布弹窗
-const publishDialogVisible = ref(false)
-const currentExam = ref({})
-const publishForm = reactive({
-  dateRange: []
-})
-const publishFormRef = ref(null)
-
-const publishRules = {
-  dateRange: [{ required: true, message: '请选择考试起止时间', trigger: 'change' }]
-}
 
 // 状态字典
+// Backend status: 0=Draft, 1=Published, 2=Ended (Assumption based on discussion)
 const statusMap = {
-  draft: { label: '未发布', type: 'info' },
-  published: { label: '进行中', type: 'success' },
-  ended: { label: '已结束', type: 'danger' }
+  0: { label: '未发布', type: 'info', value: 'draft' },
+  1: { label: '进行中', type: 'success', value: 'published' },
+  2: { label: '已结束', type: 'danger', value: 'ended' }
 }
 
 const statusOptions = [
-  { label: '未发布', value: 'draft' },
-  { label: '进行中', value: 'published' },
-  { label: '已结束', value: 'ended' }
+  { label: '未发布', value: 0 },
+  { label: '进行中', value: 1 },
+  { label: '已结束', value: 2 }
 ]
 
-// 查询
+// Fetch Data
+const loadData = async () => {
+    loading.value = true
+    try {
+        const res = await getExamPaperList(queryParams)
+        if (res && res.records) {
+            tableData.value = res.records.map(item => ({
+                id: item.paperId || item.id,
+                title: item.title,
+                duration: item.duration,
+                totalScore: item.totalMark || item.totalScore,
+                questionCount: item.questionCount || 0, // Map questionCount
+                status: item.status !== undefined ? item.status : 1, 
+                createTime: item.createTime || '-'
+            }))
+            total.value = res.total
+        } else {
+            tableData.value = []
+            total.value = 0
+        }
+    } catch (e) {
+        ElMessage.error('加载列表失败')
+    } finally {
+        loading.value = false
+    }
+}
+
+// Search
 const handleQuery = () => {
-  console.log('Query:', queryParams)
-  ElMessage.success('查询成功')
+  queryParams.page = 1
+  loadData()
 }
 
 const handleReset = () => {
@@ -52,58 +68,42 @@ const handleReset = () => {
   handleQuery()
 }
 
-// 发布按钮
+const handlePageChange = (page) => {
+    queryParams.page = page
+    loadData()
+}
+
+// Publish
 const handlePublish = (row) => {
-  currentExam.value = row
-  publishDialogVisible.value = true
-  publishForm.dateRange = []
-  if (publishFormRef.value) publishFormRef.value.clearValidate()
-}
-
-// 确认发布
-const submitPublish = async () => {
-  if (!publishFormRef.value) return
-  await publishFormRef.value.validate((valid) => {
-    if (valid) {
-      const [start, end] = publishForm.dateRange
-      // 更新数据
-      const index = tableData.value.findIndex(item => item.id === currentExam.value.id)
-      if (index !== -1) {
-        tableData.value[index].status = 'published'
-        tableData.value[index].startTime = start
-        tableData.value[index].endTime = end
-      }
-      ElMessage.success(`试卷 "${currentExam.value.title}" 发布成功`)
-      publishDialogVisible.value = false
-    }
-  })
-}
-
-// 撤回/结束考试
-const handleEnd = (row) => {
-  ElMessageBox.confirm(`确定要结束试卷 "${row.title}" 的考试吗？结束生将无法再参加。`, '提示', {
-    confirmButtonText: '确定',
+  ElMessageBox.confirm(`确定要发布试卷 "${row.title}" 吗？发布后学生即可参加考试。`, '发布确认', {
+    confirmButtonText: '确定发布',
     cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    row.status = 'ended'
-    ElMessage.success('考试已结束')
+    type: 'success'
+  }).then(async () => {
+      try {
+          await publishExamPaper(row.id)
+          ElMessage.success('发布成功')
+          loadData() // Refresh list
+      } catch (e) {
+          ElMessage.error('发布失败')
+      }
   }).catch(() => {})
 }
 
-// 删除
-const handleDelete = (row) => {
-  if (row.status === 'published') {
-    ElMessage.warning('进行中的考试无法删除')
-    return
-  }
-  ElMessageBox.confirm('确定删除该试卷吗？', '提示', { type: 'warning' })
-    .then(() => {
-      tableData.value = tableData.value.filter(item => item.id !== row.id)
-      ElMessage.success('删除成功')
-    })
-    .catch(() => {})
+// End Exam (Placeholder - need API)
+const handleEnd = (row) => {
+  ElMessage.warning('暂无结束考试接口')
+  // ElMessageBox.confirm(...)
 }
+
+// Delete (Placeholder - need API)
+const handleDelete = (row) => {
+  ElMessage.warning('暂无删除试卷接口')
+}
+
+onMounted(() => {
+    loadData()
+})
 </script>
 
 <template>
@@ -114,11 +114,14 @@ const handleDelete = (row) => {
         <el-form-item label="试卷标题">
           <el-input v-model="queryParams.title" placeholder="关键词" clearable @keyup.enter="handleQuery"/>
         </el-form-item>
+        <!-- 暂隐藏状态筛选，除非后端明确支持 status 参数 -->
+        <!-- 
         <el-form-item label="状态">
           <el-select v-model="queryParams.status" placeholder="全部" clearable style="width: 120px">
             <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
+        -->
         <el-form-item>
           <el-button type="primary" :icon="Search" @click="handleQuery">搜索</el-button>
           <el-button :icon="Refresh" @click="handleReset">重置</el-button>
@@ -128,72 +131,54 @@ const handleDelete = (row) => {
 
     <!-- 列表 -->
     <el-card class="table-container" shadow="never">
-      <el-table :data="tableData" border stripe>
+      <el-table :data="tableData" border stripe v-loading="loading">
         <el-table-column prop="id" label="编号" width="80" sortable />
         <el-table-column prop="title" label="试卷标题" min-width="200" show-overflow-tooltip />
         <el-table-column prop="duration" label="时长(分)" width="100" align="center" />
         <el-table-column prop="totalScore" label="总分" width="80" align="center" />
-        <el-table-column label="有效时间" width="320" align="center">
-          <template #default="scope">
-            <span v-if="scope.row.startTime">
-              {{ scope.row.startTime }} ~ {{ scope.row.endTime }}
-            </span>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
+        <el-table-column prop="questionCount" label="题数" width="80" align="center" />
+        <el-table-column prop="createTime" label="创建时间" width="180" align="center" />
+        
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
-            <el-tag :type="statusMap[scope.row.status].type">
-              {{ statusMap[scope.row.status].label }}
+            <el-tag :type="statusMap[scope.row.status]?.type || 'info'">
+              {{ statusMap[scope.row.status]?.label || '未知' }}
             </el-tag>
           </template>
         </el-table-column>
+        
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="scope">
-            <!-- 未发布状态：可发布、编辑、删除 -->
-            <template v-if="scope.row.status === 'draft'">
+            <!-- 0: Draft -->
+            <template v-if="scope.row.status === 0">
               <el-button link type="success" :icon="VideoPlay" @click="handlePublish(scope.row)">发布</el-button>
-              <el-button link type="primary" :icon="Edit">编辑</el-button>
+              <el-button link type="primary" :icon="Edit" disabled title="编辑功能开发中">编辑</el-button>
               <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
             </template>
             
-            <!-- 进行中状态：可结束 -->
-            <template v-if="scope.row.status === 'published'">
-               <el-button link type="warning" :icon="VideoPause" @click="handleEnd(scope.row)">结束考试</el-button>
+            <!-- 1: Published -->
+            <template v-if="scope.row.status === 1">
+               <el-button link type="warning" :icon="VideoPause" @click="handleEnd(scope.row)" disabled>结束</el-button>
             </template>
 
-            <!-- 已结束状态：可删除、查看详情 -->
-            <template v-if="scope.row.status === 'ended'">
+            <!-- 2: Ended -->
+            <template v-if="scope.row.status === 2">
               <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
             </template>
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
 
-    <!-- 发布弹窗 -->
-    <el-dialog v-model="publishDialogVisible" title="发布考试" width="500px">
-      <el-form ref="publishFormRef" :model="publishForm" :rules="publishRules" label-width="100px">
-         <div style="margin-bottom: 20px">
-           当前试卷：<strong>{{ currentExam.title }}</strong>
-         </div>
-         <el-form-item label="考试时间" prop="dateRange">
-            <el-date-picker
-              v-model="publishForm.dateRange"
-              type="datetimerange"
-              range-separator="至"
-              start-placeholder="开始时间"
-              end-placeholder="结束时间"
-              value-format="YYYY-MM-DD HH:mm:ss"
-              style="width: 100%"
-            />
-         </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="publishDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitPublish">确定发布</el-button>
-      </template>
-    </el-dialog>
+      <div class="pagination-container" style="margin-top: 20px; text-align: right">
+          <el-pagination 
+               layout="total, prev, pager, next" 
+               :total="total" 
+               v-model:current-page="queryParams.page" 
+               :page-size="queryParams.size"
+               @current-change="handlePageChange"
+          />
+      </div>
+    </el-card>
   </div>
 </template>
 
