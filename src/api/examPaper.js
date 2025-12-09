@@ -35,6 +35,15 @@ export function deleteExamPaper(id) {
   })
 }
 
+// 修改试卷状态 (status: 0=Draft, 1=Published, 2=Ended)
+export function updateExamPaperStatus(id, status) {
+  return request({
+    url: `/examPaper/status/${id}`,
+    method: 'put',
+    params: { status }
+  })
+}
+
 // 获发布试卷
 export function publishExamPaper(id) {
   return request({

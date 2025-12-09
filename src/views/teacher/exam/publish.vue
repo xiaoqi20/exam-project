@@ -2,7 +2,7 @@
 import { reactive, ref, onMounted } from 'vue'
 import { Search, Edit, Delete, VideoPlay, VideoPause, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getExamPaperList, publishExamPaper, updateExamPaper, deleteExamPaper } from '@/api/examPaper'
+import { getExamPaperList, publishExamPaper, updateExamPaper, deleteExamPaper, updateExamPaperStatus } from '@/api/examPaper'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -132,9 +132,21 @@ const handlePublish = (row) => {
   }).catch(() => {})
 }
 
-// 结束考试 (暂未实现)
+// End Exam
 const handleEnd = (row) => {
-  ElMessage.warning('暂无结束考试接口')
+  ElMessageBox.confirm(`确定要结束试卷 "${row.title}" 的考试吗？结束生将无法再参加。`, '结束确认', {
+    confirmButtonText: '确定结束',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+      try {
+          await updateExamPaperStatus(row.id, 2) // 2 = Ended
+          ElMessage.success('考试已结束')
+          loadData()
+      } catch (e) {
+          ElMessage.error('操作失败')
+      }
+  }).catch(() => {})
 }
 
 // 删除试卷

@@ -1,6 +1,6 @@
 # 项目开发进度报告 (Dev Progress)
 
-**更新日期:** 2025-12-08
+**更新日期:** 2025-12-09
 **当前状态:** 🟢 开发中 (In Progress)
 
 ## 1. 核心模块进展 (Core Modules)
@@ -35,13 +35,14 @@
         *   ✅ **状态管理**: 映射未发布/进行中/已结束状态。
         *   ✅ **发布**: 支持一键发布试卷。
         *   ✅ **编辑**: 支持修改试卷标题、时长、描述 (`PUT /examPaper`)。
+        *   ✅ **结束**: 支持结束正在进行的考试 (`PUT /examPaper/status/{id}`)。
         *   ✅ **删除**: 支持物理删除试卷 (`DELETE /examPaper/{id}`)。
 
 ## 2. 最近变更 (Recent Changes)
-1.  **Feat (Notification)**: 新增学生端新试卷发布通知功能（Navbar 轮询）。
-2.  **Feat (Exam Management)**: 完善教师端试卷管理，支持编辑试卷描述。
-3.  **Refactor**: 优化代码注释，统一为中文。
-4.  **Docs**: 新增 `升级点.md` 记录技术演进规划。
+1.  **Feat (Exam Management)**: 完成“结束考试”功能对接。
+2.  **Feat (Notification)**: 新增学生端新试卷发布通知功能（Navbar 轮询）。
+3.  **Feat (Exam Management)**: 完善教师端试卷管理，支持编辑试卷描述。
+4.  **Refactor**: 优化代码注释，统一为中文。
 
 ## 3. 待办事项 (To-Do List)
 
