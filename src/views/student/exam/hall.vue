@@ -80,6 +80,18 @@ const loadExams = async () => {
     }
 }
 // ...
+const handleSearch = () => {
+    queryParams.page = 1
+    loadExams()
+}
+
+// Manual key handler to avoid _withKeys compiler issue
+const onKeyup = (e) => {
+    if (e.key === 'Enter') {
+        handleSearch()
+    }
+}
+
 // 进入考试
 const handleStartExam = (exam) => {
   if (exam.status === 2) {
@@ -120,7 +132,7 @@ onMounted(() => {
             placeholder="搜索考试名称..."
             :prefix-icon="Search"
             style="width: 240px"
-            @keyup.enter="handleSearch"
+            @keyup="onKeyup"
             clearable
             @clear="handleSearch"
           />
@@ -218,30 +230,4 @@ onMounted(() => {
 .card-footer { text-align: center; margin-top: 5px; border-top: 1px solid #EBEEF5; padding-top: 15px; }
 .start-btn { width: 100%; border-radius: 20px; }
 .pagination-bar { margin-top: 20px; display: flex; justify-content: center; }
-</style>
-
-<style scoped>
-.app-container { padding: 20px; }
-.page-header { margin-bottom: 20px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); }
-.header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-.header-content h2 { margin: 0; font-size: 20px; color: #303133; }
-.sub-title { color: #909399; font-size: 14px; margin: 5px 0 0; }
-
-.exam-card { margin-bottom: 20px; transition: all 0.3s; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); }
-.exam-card:hover { transform: translateY(-5px); box-shadow: 0 8px 16px 0 rgba(0,0,0,0.1); }
-
-.card-header { display: flex; justify-content: space-between; align-items: center; }
-.exam-title { font-weight: bold; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
-
-.exam-info { padding: 10px 0; color: #606266; }
-.desc { font-size: 13px; color: #909399; margin-bottom: 15px; height: 40px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.5; }
-
-.meta-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
-.meta-item { display: flex; align-items: center; font-size: 13px; color: #606266; }
-.meta-item .el-icon { margin-right: 4px; }
-
-.time-range { color: #F56C6C; margin-top: 10px; font-size: 12px; }
-
-.card-footer { text-align: center; margin-top: 5px; border-top: 1px solid #EBEEF5; padding-top: 15px; }
-.start-btn { width: 100%; border-radius: 20px; }
 </style>
