@@ -16,27 +16,28 @@ const queryParams = reactive({
     title: ''
 })
 
-const isToday = (dateStr) => {
+const isWithin24Hours = (dateStr) => {
     if (!dateStr || dateStr === '-') return false
-    const d = new Date(dateStr)
-    const today = new Date()
-    return d.getDate() === today.getDate() &&
-           d.getMonth() === today.getMonth() &&
-           d.getFullYear() === today.getFullYear()
+    const end = new Date(dateStr).getTime()
+    const now = Date.now()
+    // Within 24 hours (86400000 ms) since end time
+    // Condition: now >= end AND now - end <= 24h
+    // Or loosely: just check if it's recent enough. 
+    // Assuming backend time is sync with client time roughly.
+    const diff = now - end
+    return diff >= 0 && diff <= 86400000 
 }
 
 const loadExams = async () => {
     loading.value = true
     try {
-        // Query all exams (remove status filter if possible, or request backend to support multiple)
-        // Note: Assuming backend returns all if status is not provided or handles custom logic.
-        // If backend forces status=1 by default, we might need a separate API call or param.
-        // Let's try sending NO status to get all.
+        // ... (query setup)
         const params = { ...queryParams }
         delete params.status 
         
         const res = await getExamPaperList(params)
         if (res && res.records) {
+            // ... (mapping)
             const rawList = res.records.map(item => ({
                 id: item.paperId || item.id,
                 title: item.title,
@@ -45,27 +46,25 @@ const loadExams = async () => {
                 description: item.description || '暂无描述',
                 status: item.status !== undefined ? item.status : 1, // 1=active, 2=ended
                 createTime: item.createTime,
+                updateTime: item.updateTime, 
                 endTime: '长期开放' 
             }))
 
             // Client-side filtering:
             // 1. Status = 1 (Active)
-            // 2. Status = 2 (Ended) AND created Today
+            // 2. Status = 2 (Ended) AND within 24 hours of ending
             
-            // FIXME: [性能与分页优化提醒]
-            // 当前逻辑存在分页不准确的问题：
-            // 后端返回的是基于所有状态的分页数据，前端过滤后，可能导致某一页显示的条目很少甚至为空。
-            // 随着历史试卷增多，第一页可能全是“非今日的已结束试卷”，导致前端显示空白。
-            // 
-            // 优化方案 (TODO):
-            // 需要后端提供支持复合条件的查询接口，例如: WHERE status = 1 OR (status = 2 AND create_time = TODAY)
-            // 将过滤逻辑下沉到数据库层。
+            // FIXME: [性能与分页优化提醒] ...
             examList.value = rawList.filter(item => {
                 if (item.status === 1) return true
-                if (item.status === 2 && isToday(item.createTime)) return true
+                if (item.status === 2) {
+                    // Use updateTime as "Ended Time", fallback to createTime
+                    const timeToCheck = item.updateTime || item.createTime
+                    if (isWithin24Hours(timeToCheck)) return true
+                }
                 return false
             })
-            
+            // ...            
             // Note: Total count might be inaccurate due to client-side filtering of pages.
             // Ideally backend should handle this. For now, we accept this limitation.
             total.value = examList.value.length 
@@ -169,7 +168,9 @@ onMounted(() => {
                   </div>
                 </div>
                 <div class="time-range">
-                  <small v-if="exam.status === 2">发布于: {{ exam.createTime }} (本日)</small>
+                  <small v-if="exam.status === 2">
+                      结束于: {{ exam.updateTime || exam.createTime }}
+                  </small>
                   <small v-else>截止: {{ exam.endTime }}</small>
                 </div>
               </div>
