@@ -219,7 +219,7 @@ onMounted(() => {
             
             <!-- 1: 进行中 -->
             <template v-if="scope.row.status === 1">
-               <el-button link type="warning" :icon="VideoPause" @click="handleEnd(scope.row)" disabled>结束</el-button>
+               <el-button link type="warning" :icon="VideoPause" @click="handleEnd(scope.row)">结束</el-button>
             </template>
 
             <!-- 2: 已结束 -->
