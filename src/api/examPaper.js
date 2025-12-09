@@ -18,6 +18,23 @@ export function addQuestionsToPaper(data) {
   })
 }
 
+// 修改试卷基本信息
+export function updateExamPaper(data) {
+  return request({
+    url: '/examPaper',
+    method: 'put',
+    data
+  })
+}
+
+// 删除试卷
+export function deleteExamPaper(id) {
+  return request({
+    url: `/examPaper/${id}`,
+    method: 'delete'
+  })
+}
+
 // 获发布试卷
 export function publishExamPaper(id) {
   return request({
