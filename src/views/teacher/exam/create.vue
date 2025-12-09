@@ -196,6 +196,7 @@ onMounted(() => {
                     </div>
                     <div class="list-body">
                          <el-table :data="sourceQuestions" size="small" stripe height="100%" @row-click="handleSelect">
+                             <el-table-column type="index" label="序号" width="50" align="center" />
                              <el-table-column prop="content" label="题目" show-overflow-tooltip />
                              <el-table-column prop="type" label="类型" width="70">
                                  <template #default="scope">
@@ -229,7 +230,7 @@ onMounted(() => {
                     </div>
                     <div class="list-body">
                          <el-table :data="selectedQuestions" size="small" stripe height="100%">
-                             <el-table-column width="50" type="index" label="序号" />
+                             <el-table-column width="50" type="index" label="序号" align="center" />
                              <el-table-column prop="content" label="题目" show-overflow-tooltip />
                              <el-table-column prop="score" label="分值" width="60" align="center" />
                              <el-table-column width="50" align="center">

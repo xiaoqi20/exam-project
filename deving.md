@@ -13,6 +13,7 @@
 *   **考试大厅 (`src/views/student/exam/hall.vue`)**
     *   ✅ **接口对接**: 移除 Mock 数据，对接 `GET /examPaper/list` 接口，展示真实发布的试卷。
     *   ✅ **状态过滤**: 仅展示“进行中”的考试。
+    *   ✅ **新消息通知**: 实现基于轮询 (Polling) 的新试卷发布通知功能。
 
 *   **成绩中心 (`src/views/student/score/`)**
     *   ✅ **历史成绩列表**: 支持模糊搜索和时间反推格式化。
@@ -37,9 +38,10 @@
         *   ✅ **删除**: 支持物理删除试卷 (`DELETE /examPaper/{id}`)。
 
 ## 2. 最近变更 (Recent Changes)
-1.  **Feat (Exam Management)**: 完善教师端试卷管理功能，补全了编辑（Title/Duration/Desc）和删除功能。
-2.  **Refactor**: 将 `publish.vue` 和 `examPaper.js` 中的注释全面中文化，统一代码风格。
-3.  **Fix**: 修复了列表页状态映射和题目数量显示的问题。
+1.  **Feat (Notification)**: 新增学生端新试卷发布通知功能（Navbar 轮询）。
+2.  **Feat (Exam Management)**: 完善教师端试卷管理，支持编辑试卷描述。
+3.  **Refactor**: 优化代码注释，统一为中文。
+4.  **Docs**: 新增 `升级点.md` 记录技术演进规划。
 
 ## 3. 待办事项 (To-Do List)
 
