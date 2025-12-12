@@ -50,7 +50,7 @@ const loadData = async () => {
                 totalScore: item.totalMark || item.totalScore,
                 questionCount: item.questionCount || 0,
                 status: item.status !== undefined ? item.status : 1, 
-                createTime: item.createTime || '-',
+                createTime: (item.createTime || '-').replace('T', ' '),
                 description: item.description || '' // 确保获取描述字段
             }))
             total.value = res.total

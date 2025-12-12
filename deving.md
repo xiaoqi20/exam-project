@@ -1,6 +1,6 @@
 # 项目开发进度报告 (Dev Progress)
 
-**更新日期:** 2025-12-09
+**更新日期:** 2025-12-12
 **当前状态:** 🟢 开发中 (In Progress)
 
 ## 1. 核心模块进展 (Core Modules)
@@ -11,8 +11,11 @@
     *   ✅ **数据适配**: 完美支持单选/多选/判断三种题型，兼容多种选项数据格式。
     *   ✅ **时间追踪**: 实现本地持久化计时 + 提交时强制同步服务端时间。
 *   **考试大厅 (`src/views/student/exam/hall.vue`)**
-    *   ✅ **接口对接**: 移除 Mock 数据，对接 `GET /examPaper/list` 接口，展示真实发布的试卷。
-    *   ✅ **状态过滤**: 仅展示“进行中”的考试。
+    *   ✅ **接口对接**: 移除 Mock 数据，对接 `GET /examPaper/list` 接口。
+    *   ✅ **展示优化**: 
+        *   支持显示“进行中”和“24小时内已结束”的考试。
+        *   列表自动按“进行中”优先排序。
+        *   已结束考试显示“结束于: [时间]”，UI 置灰。
     *   ✅ **新消息通知**: 实现基于轮询 (Polling) 的新试卷发布通知功能。
 
 *   **成绩中心 (`src/views/student/score/`)**
@@ -22,27 +25,19 @@
 ### 👩‍🏫 教师端 - 教学管理 (Teacher Module)
 *   **试题管理 (`src/views/teacher/question/list.vue`)**
     *   ✅ **接口对接**: 全面对接 CRUD 接口。
-    *   ✅ **功能增强**: 多选题动态选项、判断题自动填充。
-
 *   **试卷管理 (`src/views/teacher/exam/`)**
-    *   ✅ **创建试卷 (`create.vue`)**:
-        *   实现分步组卷向导 (Steps)。
-        *   Step 1: 创建试卷基本信息 (对接 `POST /examPaper`)。
-        *   Step 2: 从题库选择题目 (对接 `POST /examPaper/addQuestions`)。
-        *   Step 3: 自动发布试卷 (对接 `PUT /examPaper/publish/{id}`)。
-    *   ✅ **试卷列表 (`publish.vue`)**:
-        *   实现教师端试卷列表管理。
-        *   ✅ **状态管理**: 映射未发布/进行中/已结束状态。
-        *   ✅ **发布**: 支持一键发布试卷。
-        *   ✅ **编辑**: 支持修改试卷标题、时长、描述 (`PUT /examPaper`)。
-        *   ✅ **结束**: 支持结束正在进行的考试 (`PUT /examPaper/status/{id}`)。
-        *   ✅ **删除**: 支持物理删除试卷 (`DELETE /examPaper/{id}`)。
+    *   ✅ **全流程闭环**: 创建、发布、编辑、删除、结束考试。
+
+### 🛡️ 管理员端 (Admin Module)
+*   **学生管理 (`src/views/admin/user/student.vue`)**
+    *   ✅ **CRUD 闭环**: 实现学生列表查询、新增（含默认密码）、修改（含详情回显）、删除功能。
+    *   ✅ **字段对齐**: 修正前端字段 (`stuId`, `sname` 等) 与后端接口的映射。
 
 ## 2. 最近变更 (Recent Changes)
-1.  **Feat (Exam Management)**: 完成“结束考试”功能对接。
-2.  **Feat (Notification)**: 新增学生端新试卷发布通知功能（Navbar 轮询）。
-3.  **Feat (Exam Management)**: 完善教师端试卷管理，支持编辑试卷描述。
-4.  **Refactor**: 优化代码注释，统一为中文。
+1.  **Feat (Admin)**: 完成学生管理模块的所有功能对接。
+2.  **Refactor (Student)**: 优化考试大厅列表加载逻辑（单次请求+客户端过滤）。
+3.  **Fix**: 修复 `hall.vue` 中键盘事件导致的运行时错误。
+4.  **Fix**: 修复 `student.vue` 中的代码重复和语法错误。
 
 ## 3. 待办事项 (To-Do List)
 

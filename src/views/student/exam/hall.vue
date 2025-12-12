@@ -20,53 +20,58 @@ const isWithin24Hours = (dateStr) => {
     if (!dateStr || dateStr === '-') return false
     const end = new Date(dateStr).getTime()
     const now = Date.now()
-    // Within 24 hours (86400000 ms) since end time
-    // Condition: now >= end AND now - end <= 24h
-    // Or loosely: just check if it's recent enough. 
-    // Assuming backend time is sync with client time roughly.
+    // 检查是否在结束时间后的 24 小时内 (86400000 毫秒)
+    // 条件: now >= end 且 now - end <= 24h
+    // 假设后端时间与客户端时间基本同步
     const diff = now - end
     return diff >= 0 && diff <= 86400000 
+}
+
+const formatTime = (timeStr) => {
+    if (!timeStr) return '-'
+    return timeStr.replace('T', ' ')
 }
 
 const loadExams = async () => {
     loading.value = true
     try {
-        // ... (query setup)
+        // 准备参数：移除 status，让后端返回所有可见试卷（进行中 & 已结束）
         const params = { ...queryParams }
         delete params.status 
         
         const res = await getExamPaperList(params)
+        
         if (res && res.records) {
-            // ... (mapping)
             const rawList = res.records.map(item => ({
                 id: item.paperId || item.id,
                 title: item.title,
                 duration: item.duration,
                 totalScore: item.totalMark || item.totalScore || 100,
                 description: item.description || '暂无描述',
-                status: item.status !== undefined ? item.status : 1, // 1=active, 2=ended
+                status: item.status !== undefined ? item.status : 1, // 1=进行中, 2=已结束
                 createTime: item.createTime,
                 updateTime: item.updateTime, 
                 endTime: '长期开放' 
             }))
 
-            // Client-side filtering:
-            // 1. Status = 1 (Active)
-            // 2. Status = 2 (Ended) AND within 24 hours of ending
-            
-            // FIXME: [性能与分页优化提醒] ...
-            examList.value = rawList.filter(item => {
+            // 前端过滤逻辑:
+            // 1. 状态 = 1 (进行中): 保留
+            // 2. 状态 = 2 (已结束): 仅保留结束时间在 24 小时内的
+            const filteredList = rawList.filter(item => {
                 if (item.status === 1) return true
                 if (item.status === 2) {
-                    // Use updateTime as "Ended Time", fallback to createTime
+                    // 使用 updateTime 作为结束时间，如果为空则兜底使用 createTime
                     const timeToCheck = item.updateTime || item.createTime
                     if (isWithin24Hours(timeToCheck)) return true
                 }
                 return false
             })
-            // ...            
-            // Note: Total count might be inaccurate due to client-side filtering of pages.
-            // Ideally backend should handle this. For now, we accept this limitation.
+
+            // 排序: 进行中(1) 在前, 已结束(2) 在后
+            examList.value = filteredList.sort((a, b) => {
+                return a.status - b.status
+            })
+            
             total.value = examList.value.length 
         } else {
             examList.value = []
@@ -84,7 +89,7 @@ const handleSearch = () => {
     loadExams()
 }
 
-// Manual key handler to avoid _withKeys compiler issue
+// 手动键盘事件处理，避免 Vue 编译器生成 _withKeys 代码导致的运行时错误
 const onKeyup = (e) => {
     if (e.key === 'Enter') {
         handleSearch()
@@ -169,7 +174,7 @@ onMounted(() => {
                 </div>
                 <div class="time-range">
                   <small v-if="exam.status === 2">
-                      结束于: {{ exam.updateTime || exam.createTime }}
+                      结束于: {{ formatTime(exam.updateTime || exam.createTime) }}
                   </small>
                   <small v-else>截止: {{ exam.endTime }}</small>
                 </div>
@@ -219,14 +224,14 @@ onMounted(() => {
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .exam-title { font-weight: bold; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
 
-.exam-info { padding: 10px 0; color: #606266; }
-.desc { font-size: 13px; color: #909399; margin-bottom: 15px; height: 40px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.5; }
+.exam-info { padding: 5px 0; color: #606266; }
+.desc { font-size: 14px; color: #909399; margin-bottom: 8px; height: 42px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.5; }
 
 .meta-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
-.meta-item { display: flex; align-items: center; font-size: 13px; color: #606266; }
+.meta-item { display: flex; align-items: center; font-size: 14px; color: #606266; }
 .meta-item .el-icon { margin-right: 4px; }
 
-.time-range { color: #F56C6C; margin-top: 10px; font-size: 12px; }
+.time-range { color: #F56C6C; margin-top: 5px; font-size: 13px; }
 
 .card-footer { text-align: center; margin-top: 5px; border-top: 1px solid #EBEEF5; padding-top: 15px; }
 .start-btn { width: 100%; border-radius: 20px; }
