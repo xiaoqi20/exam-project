@@ -32,12 +32,14 @@
 *   **学生管理 (`src/views/admin/user/student.vue`)**
     *   ✅ **CRUD 闭环**: 实现学生列表查询、新增（含默认密码）、修改（含详情回显）、删除功能。
     *   ✅ **字段对齐**: 修正前端字段 (`stuId`, `sname` 等) 与后端接口的映射。
+*   **教师管理 (`src/views/admin/user/teacher.vue`)**
+    *   ✅ **CRUD 闭环**: 实现教师列表查询、新增、修改、删除、重置密码。
+    *   ✅ **字段适配**: 适配后端字段 (`tid`, `tname`, `dept`)，解决显示空白问题。
 
 ## 2. 最近变更 (Recent Changes)
-1.  **Feat (Admin)**: 完成学生管理模块的所有功能对接。
-2.  **Refactor (Student)**: 优化考试大厅列表加载逻辑（单次请求+客户端过滤）。
-3.  **Fix**: 修复 `hall.vue` 中键盘事件导致的运行时错误。
-4.  **Fix**: 修复 `student.vue` 中的代码重复和语法错误。
+1.  **Feat (Admin)**: 完成教师管理模块的所有功能对接（API + UI）。
+2.  **Feat (Admin)**: 完成学生管理模块的所有功能对接（API + UI）。
+3.  **Refactor**: 重构了学生和教师管理页面的代码结构，确保无语法错误和逻辑漏洞。
 
 ## 3. 待办事项 (To-Do List)
 
