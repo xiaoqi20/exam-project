@@ -1,12 +1,15 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Check, Close } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, Close, MagicStick, Loading } from '@element-plus/icons-vue'
 import { getScoreDetail } from '@/api/exam'
 import { ElMessage } from 'element-plus'
+import MarkdownViewer from '@/components/MarkdownViewer.vue'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const loading = ref(false)
 const paperInfo = ref({})
@@ -18,12 +21,9 @@ const loadDetail = async () => {
   loading.value = true
   try {
     const res = await getScoreDetail(scoreId)
-    // Assuming structure: res.data = { paperInfo: {}, questions: [] }
-    // Adjust based on actual response
     const data = res
     
     if (data) {
-       // Support both nested structure or flat if that's how backend sends it
        paperInfo.value = data.paperInfo || {
            title: data.title,
            studentScore: data.studentScore || data.score,
@@ -31,13 +31,12 @@ const loadDetail = async () => {
        }
        
        const rawQuestions = data.questions || []
-       questions.value = rawQuestions.map(q => {
+       questions.value = rawQuestions.map((q, index) => {
            let type = 'choice'
            if (q.type === '单选题' || q.type === '选择题') type = 'choice'
            else if (q.type === '多选题') type = 'multiple_choice'
            else if (q.type === '判断题') type = 'true_false'
 
-           // Normalize options
            const options = {}
            if (type === 'choice' || type === 'multiple_choice') {
                if (q.optionA) options['A'] = q.optionA
@@ -58,8 +57,9 @@ const loadDetail = async () => {
                ...q,
                type,
                options,
-               // Ensure correct boolean for rendering
-               isCorrect: q.studentScore === q.score || q.answer === q.studentAnswer // Fallback logic
+               isCorrect: q.studentScore === q.score || q.answer === q.studentAnswer,
+               analysis: q.analysis || '', // Default to empty string
+               aiLoading: false // Track AI loading state
            }
        })
     }
@@ -71,11 +71,86 @@ const loadDetail = async () => {
   }
 }
 
-const getOptionClass = (q, key) => {
-    // Logic for highlighting options
-    // Green: Correct Answer
-    // Red: User selected BUT Wrong
+// Helper to clean spacing issues from AI response
+const cleanAIContent = (text) => {
+    if (!text) return ''
     
+    return text
+        // 1. CRITICAL: Remove spaces between Chinese characters (AI artifact)
+        .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2')
+        .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2') // Repeat for overlaps
+
+        // 2. Fix bold tags spacing: "** Text **" -> "**Text**"
+        .replace(/\*\*\s+(.*?)\s+\*\*/g, '**$1**')
+        
+        // 3. Fix Chinese punctuation spacing
+        .replace(/\s*([，。：；！？])\s*/g, '$1')
+
+        // 4. Normalize newlines (just in case)
+        .replace(/\r\n/g, '\n')
+        
+        .trim()
+}
+
+// Fetch AI Analysis Stream
+const fetchAIAnalysis = async (q) => {
+    if (q.aiLoading) return
+    q.aiLoading = true
+    q.analysis = '' 
+    let rawAnalysis = ''
+    
+    try {
+        const token = userStore.token
+        const url = `/api/ai/analyze/stream?questionId=${q.id || q.questionId}&studentAnswer=${encodeURIComponent(q.studentAnswer || '')}`
+        
+        const response = await fetch(url, {
+            headers: {
+                'token': token,
+                'Accept': 'text/event-stream'
+            }
+        })
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            
+            const chunk = decoder.decode(value, { stream: true })
+            const lines = chunk.split('\n')
+            for (const line of lines) {
+                if (line.startsWith('data:')) {
+                    const data = line.slice(5).trim()
+                    if (data === '[DONE]') break
+                    
+                    let contentToAdd = ''
+                    try {
+                         const json = JSON.parse(data)
+                         contentToAdd = json.content || ''
+                    } catch (e) {
+                         contentToAdd = data + ' ' 
+                    }
+                    
+                    rawAnalysis += contentToAdd
+                    q.analysis = cleanAIContent(rawAnalysis)
+                }
+            }
+        }
+    } catch (e) {
+        console.error('AI Stream Error:', e)
+        ElMessage.error('AI 解析生成失败')
+        q.analysis += '\n\n*(获取解析失败)*'
+    } finally {
+        q.aiLoading = false
+    }
+}
+
+const getOptionClass = (q, key) => {
     const isUserSelected = (q.studentAnswer || '').includes(key)
     const isCorrectAns = (q.answer || q.correctAnswer || '').includes(key)
     
@@ -132,7 +207,6 @@ onMounted(() => {
              
              <!-- Options Area -->
              <div class="options-list">
-                 <!-- Choice / Multiple Choice -->
                  <template v-if="q.type === 'choice' || q.type === 'multiple_choice'">
                      <div 
                         v-for="(val, key) in q.options" 
@@ -142,14 +216,11 @@ onMounted(() => {
                      >
                          <span class="opt-label">{{ key }}.</span>
                          <span class="opt-text">{{ val }}</span>
-                         
-                         <!-- Icons for clarity -->
                          <el-icon v-if="(q.answer || q.correctAnswer || '').includes(key)" class="icon-indicator success"><Check /></el-icon>
                          <el-icon v-if="(q.studentAnswer || '').includes(key) && !(q.answer || q.correctAnswer || '').includes(key)" class="icon-indicator danger"><Close /></el-icon>
                      </div>
                  </template>
                  
-                 <!-- True/False -->
                  <template v-if="q.type === 'true_false'">
                       <div class="option-item" :class="getOptionClass(q, 'A')">
                           <span class="opt-label">A.</span>
@@ -175,9 +246,32 @@ onMounted(() => {
                     <span class="label">正确答案：</span>
                     <span class="value text-success">{{ q.answer || q.correctAnswer }}</span>
                  </div>
-                 <div v-if="q.analysis" class="analysis-row analysis-text">
+                 
+                 <!-- Analysis Section -->
+                 <div class="analysis-row analysis-text">
                     <span class="label">解析：</span>
-                    <span class="value">{{ q.analysis }}</span>
+                    <div class="value" style="flex: 1">
+                        <template v-if="q.analysis">
+                            <MarkdownViewer :content="q.analysis" />
+                            <span v-if="q.aiLoading" class="cursor"></span>
+                        </template>
+                        
+                        <div v-else>
+                            <el-button 
+                                type="primary" 
+                                plain 
+                                size="small" 
+                                :loading="q.aiLoading"
+                                :icon="MagicStick"
+                                @click="fetchAIAnalysis(q)"
+                            >
+                                {{ q.aiLoading ? '生成中...' : 'AI 智能解析' }}
+                            </el-button>
+                        </div>
+                    </div>
+                 </div>
+                 <div v-if="q.analysis && !q.aiLoading" style="margin-left: 80px; margin-top: 5px;">
+                      <el-button link type="primary" size="small" @click="fetchAIAnalysis(q)">重新生成</el-button>
                  </div>
              </div>
 
@@ -218,13 +312,12 @@ onMounted(() => {
 .question-card {
     margin-bottom: 20px;
     border: none;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08); /* Softer shadow */
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
 }
 
-/* Question Header Layout */
 .q-header {
     display: flex;
-    flex-wrap: wrap; /* Allow wrapping on small screens */
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: 12px;
     line-height: 1.5;
@@ -240,27 +333,26 @@ onMounted(() => {
     font-weight: 600;
     font-size: 16px;
     flex: 1;
-    min-width: 200px; /* Ensure text doesn't get too squashed */
+    min-width: 200px;
     color: #303133;
 }
 .q-status {
     flex-shrink: 0;
-    margin-left: auto; /* Push to right */
-    display: flex; /* Use flex to control child tag */
+    margin-left: auto;
+    display: flex;
 }
 .status-tag {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     font-size: 13px;
-    padding: 4px 12px; /* Add vertical padding */
-    height: auto; /* Allow auto height */
-    line-height: 1.4; /* Better line height for wrapping */
-    white-space: normal; /* Allow text to wrap if absolutely necessary, though flex-shrink 0 usually prevents it */
+    padding: 4px 12px;
+    height: auto;
+    line-height: 1.4;
+    white-space: normal;
     min-height: 28px;
 }
 
-/* Options */
 .options-list {
     margin: 15px 0;
     display: flex;
@@ -297,7 +389,6 @@ onMounted(() => {
 .icon-indicator.success { color: #67C23A; }
 .icon-indicator.danger { color: #F56C6C; }
 
-/* Highlight Styles */
 .correct-option {
     background-color: #f0f9eb;
     border-color: #c2e7b0;
@@ -312,11 +403,10 @@ onMounted(() => {
 }
 .wrong-option .opt-label, .wrong-option .opt-text { color: #F56C6C; }
 
-/* Analysis Box */
 .analysis-box {
     margin-top: 20px;
     padding: 16px 20px;
-    background: #f8f9fa; /* Lighter grey */
+    background: #f8f9fa;
     border-radius: 6px;
     border: 1px solid #ebeef5;
 }
@@ -340,7 +430,22 @@ onMounted(() => {
 .text-success { color: #67C23A; font-weight: bold; }
 .text-danger { color: #F56C6C; font-weight: bold; }
 
-/* Responsive Adjustments */
+/* AI Cursor Animation */
+.cursor {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: #d63384; /* Match the bold color for consistency */
+    vertical-align: middle;
+    margin-left: 2px;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
 @media (max-width: 768px) {
     .q-header {
         flex-direction: column;
