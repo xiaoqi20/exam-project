@@ -8,7 +8,6 @@ export function getQuestionList(params) {
   })
 }
 
-// 预留其他接口，待后端实现
 export function addQuestion(data) {
   return request({
     url: '/question',
@@ -29,5 +28,17 @@ export function deleteQuestion(id) {
   return request({
     url: `/question/${id}`,
     method: 'delete'
+  })
+}
+
+// Excel 批量导入
+export function importQuestions(formData) {
+  return request({
+    url: '/question/import',
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
   })
 }

@@ -103,10 +103,17 @@ const initChart = () => {
     tooltip: { trigger: 'item' },
     xAxis: {
       type: 'category',
-      data: Object.keys(segments)
+      data: Object.keys(segments),
+      axisLabel: { interval: 0 } // Force show all labels
     },
     yAxis: {
       type: 'value'
+    },
+    grid: {
+        left: '10%',
+        right: '5%',
+        bottom: '10%',
+        containLabel: true
     },
     series: [
       {
@@ -187,11 +194,11 @@ onUnmounted(() => {
     <!-- Header: Select Exam -->
     <el-card shadow="never" class="header-card">
       <div class="header-row">
-        <span>选择试卷查看报表：</span>
+        <span class="label">选择试卷：</span>
         <el-select 
           v-model="selectedExamId" 
           placeholder="请选择试卷" 
-          style="width: 300px; margin-left: 10px"
+          style="width: 100%; max-width: 300px;"
           @change="handleExamChange"
           filterable
         >
@@ -207,29 +214,29 @@ onUnmounted(() => {
 
     <div v-if="reportData" v-loading="loading">
       <!-- Statistics Cards -->
-      <el-row :gutter="20" style="margin-top: 20px">
-        <el-col :span="6">
+      <el-row :gutter="10" style="margin-top: 20px">
+        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
           <el-card shadow="hover">
             <template #header>参考人数</template>
             <div class="stat-value">{{ reportData.total }}</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
           <el-card shadow="hover">
             <template #header>平均分</template>
             <div class="stat-value" style="color: #409EFF">{{ reportData.avg }}</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
           <el-card shadow="hover">
             <template #header>及格率</template>
             <div class="stat-value" style="color: #67C23A">{{ reportData.passRate }}</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
           <el-card shadow="hover">
             <template #header>最高/最低</template>
-            <div class="stat-value">
+            <div class="stat-value small-text">
               <span style="color: #67C23A">{{ reportData.max }}</span> / 
               <span style="color: #F56C6C">{{ reportData.min }}</span>
             </div>
@@ -238,23 +245,23 @@ onUnmounted(() => {
       </el-row>
 
       <!-- Chart & Table -->
-      <el-row :gutter="20" style="margin-top: 20px">
+      <el-row :gutter="20" style="margin-top: 10px">
         <!-- Left: Chart -->
-        <el-col :span="12">
+        <el-col :span="12" :xs="24" class="mb-20">
           <el-card shadow="hover">
-            <div ref="chartRef" style="height: 400px; width: 100%"></div>
+            <div ref="chartRef" style="height: 350px; width: 100%"></div>
           </el-card>
         </el-col>
         
         <!-- Right: Detail Table -->
-        <el-col :span="12">
-          <el-card shadow="hover" style="height: 442px; overflow: auto">
+        <el-col :span="12" :xs="24">
+          <el-card shadow="hover" style="height: 400px; overflow: hidden; display: flex; flex-direction: column;">
             <template #header>成绩排名</template>
-            <el-table :data="scoreList" stripe size="small" height="340">
-              <el-table-column type="index" label="排名" width="60" align="center" />
-              <el-table-column prop="name" label="姓名" />
-              <el-table-column prop="studentId" label="学号" />
-              <el-table-column prop="score" label="分数" align="center" sortable>
+            <el-table :data="scoreList" stripe size="small" height="100%" style="width: 100%">
+              <el-table-column type="index" label="排名" width="50" align="center" />
+              <el-table-column prop="name" label="姓名" min-width="80" show-overflow-tooltip />
+              <el-table-column prop="studentId" label="学号" min-width="100" show-overflow-tooltip />
+              <el-table-column prop="score" label="分数" width="60" align="center" sortable>
                 <template #default="{ row }">
                   <span :class="row.score < 60 ? 'score-fail' : 'score-pass'">
                     {{ row.score }}
@@ -274,8 +281,30 @@ onUnmounted(() => {
 <style scoped>
 .app-container { padding: 20px; }
 .header-card { display: flex; align-items: center; }
-.header-row { display: flex; align-items: center; font-size: 16px; font-weight: bold; }
+.header-row { display: flex; align-items: center; font-size: 16px; font-weight: bold; width: 100%; }
+.header-row .label { white-space: nowrap; margin-right: 10px; }
+
 .stat-value { font-size: 24px; font-weight: bold; text-align: center; }
+.small-text { font-size: 20px; } /* Smaller font for Max/Min on mobile */
+
 .score-pass { color: #67C23A; font-weight: bold; }
 .score-fail { color: #F56C6C; font-weight: bold; }
+
+.mb-10 { margin-bottom: 10px; }
+.mb-20 { margin-bottom: 20px; }
+
+/* Mobile Adjustments */
+@media (max-width: 768px) {
+    .app-container { padding: 10px; }
+    
+    /* Header Card */
+    .header-card :deep(.el-card__body) { padding: 15px; }
+    .header-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .header-row .label { margin-bottom: 5px; }
+    .header-row .el-select { max-width: 100% !important; }
+
+    /* Stats */
+    .stat-value { font-size: 20px; }
+    .small-text { font-size: 16px; }
+}
 </style>

@@ -14,7 +14,7 @@ const loading = ref(false)
 const baseForm = reactive({
   title: '',
   duration: 90,
-  totalScore: 0 // calculated automatically
+  totalScore: 0 
 })
 const baseFormRef = ref(null)
 const baseRules = {
@@ -29,9 +29,9 @@ const qQuery = reactive({
   content: '',
   type: ''
 })
-const sourceQuestions = ref([]) // From API
+const sourceQuestions = ref([]) 
 const totalQuestions = ref(0)
-const selectedQuestions = ref([]) // Local selection
+const selectedQuestions = ref([]) 
 
 const typeOptions = [
   { label: '单选题', value: 'choice' },
@@ -39,7 +39,6 @@ const typeOptions = [
   { label: '判断题', value: 'true_false' }
 ]
 
-// Fetch source questions
 const loadSourceQuestions = async () => {
   loading.value = true
   try {
@@ -55,7 +54,6 @@ const loadSourceQuestions = async () => {
   }
 }
 
-// Add question to selection
 const handleSelect = (row) => {
     if (selectedQuestions.value.some(q => q.id === row.id)) {
         ElMessage.warning('该题目已在试卷中')
@@ -65,7 +63,6 @@ const handleSelect = (row) => {
     updateTotalScore()
 }
 
-// Remove from selection
 const handleRemove = (index) => {
     selectedQuestions.value.splice(index, 1)
     updateTotalScore()
@@ -85,7 +82,6 @@ const handlePageChange = (page) => {
     loadSourceQuestions()
 }
 
-// Navigation
 const nextStep = async () => {
     if (activeStep.value === 0) {
         await baseFormRef.value.validate((valid) => {
@@ -104,23 +100,18 @@ const prevStep = () => {
     if (activeStep.value > 0) activeStep.value--
 }
 
-// Submit
 const handleSubmit = async () => {
     loading.value = true
     try {
-        // 1. Create Paper (Draft status=0)
         const paperRes = await createExamPaper({
             title: baseForm.title,
             duration: baseForm.duration,
-            totalMark: baseForm.totalScore // Optional, backend might verify
+            totalMark: baseForm.totalScore 
         })
         
-        // Backend returns: { code: 200, data: { id: 105 } } OR just data: 105
         const paperId = paperRes.data ? (paperRes.data.id || paperRes.data) : (paperRes.id || null)
-        
         if (!paperId) throw new Error('无法获取试卷ID')
 
-        // 2. Add Questions
         const questionIds = selectedQuestions.value.map(q => q.id)
         if (questionIds.length > 0) {
             await addQuestionsToPaper({
@@ -129,14 +120,10 @@ const handleSubmit = async () => {
             })
         }
 
-        // 3. Publish Paper (status=1)
         await publishExamPaper(paperId)
 
         ElMessage.success('试卷创建并发布成功！')
-        // Redirect to list (if list page exists)
-        // router.push('/teacher/exam/list')
         
-        // Reset form for now
         activeStep.value = 0
         baseForm.title = ''
         baseForm.duration = 90
@@ -145,7 +132,7 @@ const handleSubmit = async () => {
         
     } catch (e) {
         console.error(e)
-        ElMessage.error('操作失败：' + (e.message || '未知错误'))
+        ElMessage.error('操作失败')
     } finally {
         loading.value = false
     }
@@ -158,21 +145,21 @@ onMounted(() => {
 <template>
   <div class="app-container">
     <el-card shadow="never">
-        <el-steps :active="activeStep" finish-status="success" simple style="margin-bottom: 20px">
+        <el-steps :active="activeStep" finish-status="success" simple style="margin-bottom: 20px" class="custom-steps">
             <el-step title="基本信息" />
-            <el-step title="选择题目" />
-            <el-step title="确认发布" />
+            <el-step title="选题" />
+            <el-step title="发布" />
         </el-steps>
 
         <!-- Step 1: Info -->
         <div v-show="activeStep === 0" class="step-content">
-            <el-form ref="baseFormRef" :model="baseForm" :rules="baseRules" label-width="100px" style="max-width: 500px; margin: 0 auto;">
+            <el-form ref="baseFormRef" :model="baseForm" :rules="baseRules" label-width="100px" class="base-form">
                 <el-form-item label="试卷名称" prop="title">
                     <el-input v-model="baseForm.title" placeholder="例如：2024期末考试" />
                 </el-form-item>
                 <el-form-item label="考试时长" prop="duration">
-                    <el-input-number v-model="baseForm.duration" :min="10" :step="10" />
-                    <span class="unit">分钟</span>
+                    <el-input-number v-model="baseForm.duration" :min="10" :step="10" style="width: 100%" />
+                    <span class="unit hidden-mobile">分钟</span>
                 </el-form-item>
                 <el-form-item label="预计总分">
                     <span class="total-score">{{ baseForm.totalScore }} 分</span>
@@ -188,52 +175,47 @@ onMounted(() => {
                 <div class="panel left-panel">
                     <div class="panel-header">题库列表</div>
                     <div class="filter-bar">
-                        <el-input v-model="qQuery.content" placeholder="搜索题目" size="small" style="width: 120px" @keyup.enter="handleQuery" />
-                        <el-select v-model="qQuery.type" placeholder="题型" size="small" style="width: 100px" clearable @change="handleQuery">
+                        <el-input v-model="qQuery.content" placeholder="搜索" size="small" class="flex-1" @keyup.enter="handleQuery" />
+                        <el-select v-model="qQuery.type" placeholder="题型" size="small" style="width: 80px" clearable @change="handleQuery">
                              <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
                         </el-select>
                         <el-button :icon="Search" circle size="small" @click="handleQuery" />
                     </div>
                     <div class="list-body">
                          <el-table :data="sourceQuestions" size="small" stripe height="100%" @row-click="handleSelect">
-                             <el-table-column type="index" label="序号" width="50" align="center" />
+                             <el-table-column type="index" label="#" width="40" align="center" />
                              <el-table-column prop="content" label="题目" show-overflow-tooltip />
-                             <el-table-column prop="type" label="类型" width="70">
-                                 <template #default="scope">
-                                     {{ scope.row.type === 'choice' ? '单选' : (scope.row.type === 'multiple_choice' ? '多选' : '判断') }}
-                                 </template>
-                             </el-table-column>
-                             <el-table-column width="50" align="center">
+                             <el-table-column width="40" align="center">
                                  <template #default>
-                                     <el-icon><ArrowRight /></el-icon>
+                                     <el-icon><Plus /></el-icon>
                                  </template>
                              </el-table-column>
                          </el-table>
                     </div>
                     <div class="pagination-bar">
                         <el-pagination 
-                           layout="prev, pager, next" 
+                           layout="prev, next" 
                            :total="totalQuestions" 
                            v-model:current-page="qQuery.page" 
                            :page-size="qQuery.size"
                            @current-change="handlePageChange"
                            small
                         />
+                        <span class="page-info">{{ qQuery.page }}页</span>
                     </div>
                 </div>
 
                 <!-- Right: Selected -->
                 <div class="panel right-panel">
                     <div class="panel-header">
-                        已选试题 ({{ selectedQuestions.length }})
-                        <span style="float: right">总分: {{ baseForm.totalScore }}</span>
+                        已选 ({{ selectedQuestions.length }})
+                        <span style="float: right">{{ baseForm.totalScore }}分</span>
                     </div>
                     <div class="list-body">
                          <el-table :data="selectedQuestions" size="small" stripe height="100%">
-                             <el-table-column width="50" type="index" label="序号" align="center" />
+                             <el-table-column width="40" type="index" label="#" align="center" />
                              <el-table-column prop="content" label="题目" show-overflow-tooltip />
-                             <el-table-column prop="score" label="分值" width="60" align="center" />
-                             <el-table-column width="50" align="center">
+                             <el-table-column width="40" align="center">
                                  <template #default="scope">
                                      <el-button type="danger" link :icon="Delete" @click.stop="handleRemove(scope.$index)" />
                                  </template>
@@ -246,7 +228,7 @@ onMounted(() => {
 
         <!-- Step 3: Confirm -->
         <div v-show="activeStep === 2" class="step-content confirm-view">
-             <el-descriptions title="试卷预览" border column="1">
+             <el-descriptions title="试卷预览" border :column="1">
                  <el-descriptions-item label="试卷名称">{{ baseForm.title }}</el-descriptions-item>
                  <el-descriptions-item label="考试时长">{{ baseForm.duration }} 分钟</el-descriptions-item>
                  <el-descriptions-item label="题目数量">{{ selectedQuestions.length }} 道</el-descriptions-item>
@@ -254,7 +236,7 @@ onMounted(() => {
              </el-descriptions>
              
              <div style="margin-top: 20px; text-align: center;">
-                 <el-button type="primary" size="large" @click="handleSubmit" :loading="loading">确认创建并发布</el-button>
+                 <el-button type="primary" size="large" @click="handleSubmit" :loading="loading" style="width: 100%">确认发布</el-button>
              </div>
         </div>
 
@@ -269,17 +251,18 @@ onMounted(() => {
 
 <style scoped>
 .app-container { padding: 20px; }
-.step-content { min-height: 200px; padding: 30px 0; } /* Reduced min-height, increased padding */
+.step-content { min-height: 200px; padding: 20px 0; }
 .unit { margin-left: 10px; color: #666; }
 .total-score { font-size: 18px; font-weight: bold; color: #409EFF; }
 .tips { color: #999; font-size: 12px; }
+
+.base-form { max-width: 500px; margin: 0 auto; }
 
 .selector-container {
     display: flex;
     gap: 20px;
     height: 500px;
 }
-/* ... existing panel styles ... */
 .panel {
     flex: 1;
     border: 1px solid #dcdfe6;
@@ -288,39 +271,65 @@ onMounted(() => {
     flex-direction: column;
 }
 .panel-header {
-    padding: 10px 15px;
+    padding: 10px;
     background: #f5f7fa;
     border-bottom: 1px solid #dcdfe6;
     font-weight: bold;
-    color: #606266;
+    font-size: 14px;
 }
 .filter-bar {
-    padding: 10px;
+    padding: 8px;
     border-bottom: 1px solid #ebeef5;
     display: flex;
-    gap: 10px;
+    gap: 8px;
+    align-items: center;
 }
+.flex-1 { flex: 1; }
+
 .list-body {
     flex: 1;
-    overflow: hidden; /* For table scroll */
+    overflow: hidden;
 }
 .pagination-bar {
     padding: 5px;
     border-top: 1px solid #ebeef5;
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #999;
 }
 
-.confirm-view {
-    max-width: 600px;
-    margin: 0 auto;
-}
+.confirm-view { max-width: 600px; margin: 0 auto; }
 .footer-actions {
     margin-top: 10px;
     padding-top: 20px;
     border-top: 1px solid #f0f0f0;
     display: flex;
-    justify-content: center; /* Keep center or change to flex-end for right align */
+    justify-content: center;
     gap: 20px;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .app-container { padding: 10px; }
+    .custom-steps { padding: 10px; font-size: 12px; }
+    
+    .base-form :deep(.el-form-item) {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .base-form :deep(.el-form-item__label) {
+        text-align: left;
+    }
+    
+    .selector-container {
+        flex-direction: column;
+        height: auto; /* Allow grow */
+    }
+    .panel {
+        height: 350px; /* Fixed height for scroll */
+    }
+    .hidden-mobile { display: none; }
 }
 </style>

@@ -75,21 +75,10 @@ const loadDetail = async () => {
 const cleanAIContent = (text) => {
     if (!text) return ''
     
+    // 仅保留最基础的处理，避免误伤
     return text
-        // 1. CRITICAL: Remove spaces between Chinese characters (AI artifact)
-        .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2')
-        .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2') // Repeat for overlaps
-
-        // 2. Fix bold tags spacing: "** Text **" -> "**Text**"
-        .replace(/\*\*\s+(.*?)\s+\*\*/g, '**$1**')
-        
-        // 3. Fix Chinese punctuation spacing
-        .replace(/\s*([，。：；！？])\s*/g, '$1')
-
-        // 4. Normalize newlines (just in case)
+        // 统一换行符
         .replace(/\r\n/g, '\n')
-        
-        .trim()
 }
 
 // Fetch AI Analysis Stream
@@ -123,20 +112,23 @@ const fetchAIAnalysis = async (q) => {
             
             const chunk = decoder.decode(value, { stream: true })
             const lines = chunk.split('\n')
+            
             for (const line of lines) {
                 if (line.startsWith('data:')) {
-                    const data = line.slice(5).trim()
-                    if (data === '[DONE]') break
+                    // 去掉 'data:' 前缀
+                    let data = line.slice(5)
                     
-                    let contentToAdd = ''
-                    try {
-                         const json = JSON.parse(data)
-                         contentToAdd = json.content || ''
-                    } catch (e) {
-                         contentToAdd = data + ' ' 
+                    if (data.trim() === '[DONE]') break
+                    
+                    // SSE 标准中 data: 后通常有个空格，可以去掉
+                    if (data.startsWith(' ')) {
+                        data = data.slice(1)
                     }
                     
-                    rawAnalysis += contentToAdd
+                    // 处理可能的转义换行符 (如果后端发的是 JSON 字符串形式)
+                    data = data.replace(/\\n/g, '\n')
+                    
+                    rawAnalysis += data
                     q.analysis = cleanAIContent(rawAnalysis)
                 }
             }
@@ -446,14 +438,81 @@ onMounted(() => {
     50% { opacity: 0; }
 }
 
+/* Responsive Adjustments */
 @media (max-width: 768px) {
+    .detail-container {
+        padding: 10px; /* Smaller padding */
+    }
+    
+    .header {
+        padding: 12px;
+        margin-bottom: 12px;
+    }
+
+    /* Make page header content stack */
+    :deep(.el-page-header__header) {
+        flex-wrap: wrap;
+    }
+    :deep(.el-page-header__content) {
+        font-size: 16px;
+    }
+
+    /* Score Board adjustment */
+    .score-board {
+        margin-top: 8px; /* Stack below title */
+        font-size: 14px;
+    }
+    .score-val { font-size: 20px; }
+
+    /* Question Card */
+    .question-card {
+        margin-bottom: 12px;
+    }
+    :deep(.el-card__header) {
+        padding: 12px;
+    }
+    :deep(.el-card__body) {
+        padding: 12px;
+    }
+
+    /* Header Layout */
     .q-header {
-        flex-direction: column;
+        flex-direction: column; /* Stack items */
         align-items: flex-start;
+        gap: 8px;
+    }
+    .q-content {
+        font-size: 15px;
+        line-height: 1.6;
+        min-width: 100%; /* Full width */
     }
     .q-status {
         margin-left: 0;
-        margin-top: 8px;
+        width: 100%;
+        justify-content: flex-end; /* Align right */
+    }
+
+    /* Options */
+    .option-item {
+        padding: 10px 12px;
+        font-size: 14px;
+    }
+
+    /* Analysis Box */
+    .analysis-box {
+        padding: 12px;
+        margin-top: 16px;
+    }
+    .analysis-row {
+        flex-direction: column; /* Stack Label and Value */
+        align-items: flex-start;
+        gap: 4px;
+    }
+    .analysis-row .label {
+        width: 100%;
+        margin-bottom: 2px;
+        color: #909399;
+        font-size: 13px;
     }
 }
 </style>

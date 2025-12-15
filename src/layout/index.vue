@@ -1,24 +1,71 @@
 <script setup>
 import Sidebar from './components/Sidebar.vue'
 import Navbar from './components/Navbar.vue'
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
+const route = useRoute()
 const isCollapse = ref(false)
+const isMobile = ref(false)
+const drawerVisible = ref(false)
+
+const checkMobile = () => {
+  const w = window.innerWidth
+  isMobile.value = w < 768
+  if (isMobile.value) {
+    // Force "collapsed" visual state for Navbar hamburger icon
+    isCollapse.value = true 
+  }
+}
 
 const toggleSidebar = () => {
-  isCollapse.value = !isCollapse.value
+  if (isMobile.value) {
+    drawerVisible.value = !drawerVisible.value
+  } else {
+    isCollapse.value = !isCollapse.value
+  }
 }
+
+// Close drawer when route changes (mobile only)
+watch(route, () => {
+  if (isMobile.value) {
+    drawerVisible.value = false
+  }
+})
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+})
 </script>
 
 <template>
   <el-container class="app-wrapper">
-    <Sidebar :is-collapse="isCollapse" />
+    <!-- Desktop Sidebar (Hidden on Mobile) -->
+    <Sidebar v-if="!isMobile" :is-collapse="isCollapse" class="desktop-sidebar" />
+
+    <!-- Mobile Drawer -->
+    <el-drawer
+      v-model="drawerVisible"
+      direction="ltr"
+      :with-header="false"
+      size="220px"
+      class="mobile-drawer"
+    >
+      <!-- Reuse Sidebar component inside Drawer -->
+      <!-- Pass is-collapse=false because drawer is always full width -->
+      <Sidebar :is-collapse="false" />
+    </el-drawer>
+
     <el-container class="main-container">
       <el-header height="50px" style="padding: 0">
-        <Navbar :is-collapse="isCollapse" @toggle-sidebar="toggleSidebar" />
+        <Navbar :is-collapse="isCollapse" :is-mobile="isMobile" @toggle-sidebar="toggleSidebar" />
       </el-header>
       <el-main class="app-main">
-        <!-- Breadcrumb could go here -->
         <router-view />
       </el-main>
     </el-container>
@@ -35,10 +82,18 @@ const toggleSidebar = () => {
 .main-container {
   flex-direction: column;
   background-color: #f0f2f5;
+  height: 100vh;
+  overflow: hidden; /* Ensure scroll is handled by app-main */
 }
 
 .app-main {
-  padding: 10px; /* Reduced from default 20px */
-  /* If children have their own padding, consider 0 here or removing padding from children */
+  padding: 10px;
+  overflow-y: auto; /* Scrollable content */
+}
+
+/* Ensure Drawer styles don't conflict */
+:deep(.mobile-drawer .el-drawer__body) {
+  padding: 0;
+  background-color: #304156; /* Match sidebar color */
 }
 </style>

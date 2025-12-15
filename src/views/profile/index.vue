@@ -1,13 +1,25 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
 import { User, Iphone, Lock } from '@element-plus/icons-vue'
 
 const userStore = useUserStore()
 const activeTab = ref('info')
+const isMobile = ref(false)
 
-// 模拟当前用户信息（实际应从 store 或 API 获取完整信息）
+const checkMobile = () => {
+    isMobile.value = window.innerWidth < 768
+}
+
+onMounted(() => {
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+})
+
+onUnmounted(() => window.removeEventListener('resize', checkMobile))
+
+// 模拟当前用户信息
 const userInfoForm = reactive({
   username: userStore.userInfo.name,
   phone: '13800138000', // 示例数据
@@ -56,9 +68,6 @@ const handleChangePassword = async (formEl) => {
     if (valid) {
       // TODO: 调用修改密码 API
       ElMessage.success('密码修改成功，请重新登录')
-      // 实际场景可能需要登出
-      // userStore.logout()
-      // router.push('/login')
     }
   })
 }
@@ -67,7 +76,8 @@ const handleChangePassword = async (formEl) => {
 <template>
   <div class="app-container">
     <el-row :gutter="20">
-      <el-col :span="8" :xs="24">
+      <!-- Left: User Card -->
+      <el-col :span="8" :xs="24" class="mb-20">
         <el-card class="box-card">
           <template #header>
             <div class="clearfix">
@@ -77,7 +87,9 @@ const handleChangePassword = async (formEl) => {
           <div class="text-center user-profile-header">
             <el-avatar :size="100" :src="userInfoForm.avatar" class="user-avatar" />
             <div class="user-name">{{ userStore.userInfo.name }}</div>
-            <div class="user-role">{{ userStore.role === 'admin' ? '管理员' : userStore.role === 'teacher' ? '教师' : '学生' }}</div>
+            <div class="user-role">
+                {{ userStore.role === 1 ? '管理员' : (userStore.role === 2 ? '教师' : '学生') }}
+            </div>
           </div>
           <div class="user-info-section">
             <div class="user-info-item">
@@ -105,6 +117,7 @@ const handleChangePassword = async (formEl) => {
         </el-card>
       </el-col>
       
+      <!-- Right: Settings -->
       <el-col :span="16" :xs="24">
         <el-card>
           <template #header>
@@ -114,7 +127,11 @@ const handleChangePassword = async (formEl) => {
           </template>
           <el-tabs v-model="activeTab">
             <el-tab-pane label="基本资料" name="info">
-              <el-form :model="userInfoForm" label-width="80px">
+              <el-form 
+                :model="userInfoForm" 
+                :label-position="isMobile ? 'top' : 'left'"
+                label-width="80px"
+              >
                 <el-form-item label="用户昵称">
                   <el-input v-model="userInfoForm.username" />
                 </el-form-item>
@@ -131,6 +148,7 @@ const handleChangePassword = async (formEl) => {
                 ref="passwordFormRef" 
                 :model="passwordForm" 
                 :rules="passwordRules" 
+                :label-position="isMobile ? 'top' : 'left'"
                 label-width="80px"
               >
                 <el-form-item label="旧密码" prop="oldPassword">
@@ -156,8 +174,11 @@ const handleChangePassword = async (formEl) => {
 
 <style scoped>
 .app-container {
-  padding: 10px;
+  padding: 20px;
 }
+
+.text-center { text-align: center; }
+.mb-20 { margin-bottom: 20px; }
 
 .user-profile-header {
   padding: 20px 0;
@@ -218,5 +239,10 @@ const handleChangePassword = async (formEl) => {
 .user-info-item .value {
   color: #303133;
   font-weight: 500;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .app-container { padding: 10px; }
 }
 </style>

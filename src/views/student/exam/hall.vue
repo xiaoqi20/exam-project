@@ -140,7 +140,7 @@ onMounted(() => {
             clearable
             @clear="handleSearch"
           />
-          <el-button type="primary" :icon="Search" @click="handleSearch" style="margin-left: 10px">搜索</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
         </div>
       </div>
     </div>
@@ -212,9 +212,20 @@ onMounted(() => {
 <style scoped>
 .app-container { padding: 20px; }
 .page-header { margin-bottom: 20px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); }
-.header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
 .header-content h2 { margin: 0; font-size: 20px; color: #303133; }
 .sub-title { color: #909399; font-size: 14px; margin: 5px 0 0; }
+
+.header-action { display: flex; align-items: center; gap: 10px; } /* Use gap instead of margin */
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .app-container { padding: 10px; }
+    .header-content { flex-direction: column; align-items: stretch; }
+    .header-action { width: 100%; }
+    .header-action :deep(.el-input) { width: 100% !important; flex: 1; }
+    .header-action :deep(.el-button) { margin-left: 0 !important; }
+}
 
 .exam-card { margin-bottom: 20px; transition: all 0.3s; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); }
 .exam-card:hover { transform: translateY(-5px); box-shadow: 0 8px 16px 0 rgba(0,0,0,0.1); }

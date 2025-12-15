@@ -12,11 +12,17 @@ const props = defineProps({
   }
 })
 
+const emit = defineEmits(['menu-click'])
+
 const route = useRoute()
 const userStore = useUserStore()
 const menuStore = useMenuStore()
 
 const activeMenu = computed(() => route.path)
+
+const handleSelect = () => {
+  emit('menu-click')
+}
 
 // 从 Store 获取当前角色的菜单
 const currentMenus = computed(() => {
@@ -47,6 +53,7 @@ const getIcon = (name) => {
         active-text-color="#409EFF"
         :collapse="isCollapse"
         :collapse-transition="false"
+        @select="handleSelect"
       >
         <template v-for="item in currentMenus" :key="item.path">
           <!-- 有子菜单的情况 -->
