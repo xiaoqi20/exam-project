@@ -8,19 +8,21 @@ import { useUserStore } from '@/stores/user'
 import { useExamStore } from '@/stores/exam'
 import { getExamPaperList } from '@/api/examPaper'
 import { getQuestionList } from '@/api/question'
-import { getRecommendedQuestions } from '@/api/recommend'
+import { getMistakeList } from '@/api/mistake'
+import { getStatsSummary, getDailyActivity, getQuestionDistribution } from '@/api/stats'
 
 const router = useRouter()
 const userStore = useUserStore()
 const examStore = useExamStore()
-const role = userStore.role // 'admin', 'teacher', 'student'
+// Use optional chaining just in case userStore is not ready yet (though it should be)
+const role = userStore?.role || 'student' 
 
 // Stats Data
 const stats = ref({
-  userCount: 128,
+  userCount: 0,
   paperCount: 0,
   questionCount: 0,
-  examCount: 856
+  examCount: 0
 })
 
 // Charts Refs
@@ -33,19 +35,13 @@ let pieChart = null
 const startDailyPractice = async () => {
     const loading = ElLoading.service({ text: 'AI 正在为您生成个性化推荐题目...', background: 'rgba(0, 0, 0, 0.7)' })
     try {
-        // Call Real Recommendation API
-        const res = await getRecommendedQuestions()
+        const res = await import('@/api/recommend').then(m => m.getRecommendedQuestions())
         
-        // Backend returns a list of questions directly (or wrapped in result)
-        // Assuming res is the list based on axios interceptor
         const questions = Array.isArray(res) ? res : (res.data || [])
 
         if (questions && questions.length > 0) {
-             // Adapt questions if necessary (backend might return different structure)
-             // But usually it matches Question entity
              const adaptedQuestions = questions.map(q => ({
                  ...q,
-                 // Ensure options are parsed if string
                  options: (typeof q.options === 'string' && q.options.startsWith('{')) 
                     ? JSON.parse(q.options) 
                     : q.options
@@ -78,40 +74,60 @@ const startDailyPractice = async () => {
 const loadStats = async () => {
   try {
     if (role !== 'student') {
-        try {
-            const pRes = await getExamPaperList({ page: 1, size: 1 })
-            if (pRes) stats.value.paperCount = pRes.total
-        } catch(e) {}
-        
-        try {
-            const qRes = await getQuestionList({ page: 1, size: 1 })
-            if (qRes) stats.value.questionCount = qRes.total
-        } catch(e) {}
+        const res = await getStatsSummary()
+        if (res) {
+            stats.value = {
+                userCount: res.userCount || 0,
+                paperCount: res.paperCount || 0,
+                questionCount: res.questionCount || 0,
+                examCount: res.examCount || 0
+            }
+        }
     } else {
-        // Student Mock Data
         stats.value.paperCount = 12
         stats.value.questionCount = 350
     }
   } catch (e) {
-    console.error(e)
+    console.error('Stats error', e)
   }
 }
 
 // Init Charts
-const initCharts = () => {
+const initCharts = async () => {
   if (lineChartRef.value) {
       lineChart = echarts.init(lineChartRef.value)
+      
+      let xData = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+      let sData = [0, 0, 0, 0, 0, 0, 0]
+
+      if (role !== 'student') {
+          try {
+              const res = await getDailyActivity()
+              if (res) {
+                  if (res.dates && res.values) {
+                      xData = res.dates
+                      sData = res.values
+                  } else if (Array.isArray(res)) {
+                      xData = res.map(i => i.date || i.name)
+                      sData = res.map(i => i.count || i.value)
+                  }
+              }
+          } catch(e) {}
+      } else {
+          sData = [5, 10, 2, 8, 15, 20, 12]
+      }
+
       const optionLine = {
         title: { text: '近七日考试活跃度' },
         tooltip: { trigger: 'axis' },
         grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] },
+        xAxis: { type: 'category', data: xData },
         yAxis: { type: 'value' },
         series: [{
           name: '参与人次',
           type: 'line',
           smooth: true,
-          data: [120, 132, 101, 134, 90, 230, 210],
+          data: sData,
           areaStyle: { opacity: 0.3 },
           itemStyle: { color: '#409EFF' }
         }]
@@ -121,27 +137,37 @@ const initCharts = () => {
 
   if (pieChartRef.value) {
       pieChart = echarts.init(pieChartRef.value)
-      const optionPie = {
-        title: { text: '题库知识点分布', left: 'center' },
-        tooltip: { trigger: 'item' },
-        series: [
-          {
-            name: '题目数量',
-            type: 'pie',
-            radius: ['40%', '70%'],
-            avoidLabelOverlap: false,
-            itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
-            label: { show: false, position: 'center' },
-            emphasis: {
-              label: { show: true, fontSize: 20, fontWeight: 'bold' }
-            },
-            data: [
+      
+      let pieData = []
+      if (role !== 'student') {
+          try {
+              const res = await getQuestionDistribution()
+              if (res && Array.isArray(res)) {
+                  pieData = res
+              }
+          } catch(e) {}
+      } else {
+          pieData = [
               { value: 1048, name: 'Java 基础' },
               { value: 735, name: '数据库' },
               { value: 580, name: '前端开发' },
               { value: 484, name: '计算机网络' },
               { value: 300, name: '操作系统' }
-            ]
+          ]
+      }
+
+      const optionPie = {
+        title: { text: '题库知识点分布', left: 'center' },
+        tooltip: { trigger: 'item' },
+        series: [
+          {
+            name: '数量',
+            type: 'pie',
+            radius: ['40%', '70%'],
+            avoidLabelOverlap: false,
+            itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+            label: { show: true },
+            data: pieData
           }
         ]
       }
@@ -172,7 +198,8 @@ onUnmounted(() => {
 <template>
   <div class="dashboard-container">
     <div class="welcome-header">
-        <h2>早安，{{ userStore.userInfo.name }}！</h2>
+        <!-- Safe access to userStore -->
+        <h2>早安，{{ userStore?.userInfo?.name || 'User' }}！</h2>
         <p class="subtitle">今天是 {{ new Date().toLocaleDateString() }}，祝您使用愉快。</p>
     </div>
 
