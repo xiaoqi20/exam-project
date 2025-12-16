@@ -13,7 +13,7 @@ const total = ref(0)
 const queryParams = reactive({
   page: 1,
   size: 10,
-  dateRange: [] // New: Date Range
+  dateRange: [] // 时间筛选
 })
 
 // Date helper
@@ -108,16 +108,16 @@ const cleanAIContent = (text) => {
         .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2')
         .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2') 
         .replace(/\*\*\s+(.*?)\s+\*\*/g, '**$1**')
-        .replace(/\s*([，。：；！？])\s*/g, '$1')
+        .replace(/\s*([\uff0c\u3002\uff1a\uff1b\uff1f\uff01])\s*/g, '$1')
 
     // FORCE LAYOUT
     cleaned = cleaned.replace(
-        /([\s\S])\s*(\*\*|###)?\s*错误选项分析\s*[:：]?\s*(\*\*|###)?/g, 
+        /([\s\S])\s*(\*\*|###)?\s*错误选项分析\s*[:\uff1a]?\s*(\*\*|###)?/g, 
         '$1\n\n### 错误选项分析：\n' 
     ) 
     cleaned = cleaned.replace(/([^\n])\s*-\s/g, '$1\n- ')
     
-    cleaned = cleaned.replace(/([^\n])\s*(选项\s*[A-E]\s*[：:])/g, '$1\n- **$2**')
+    cleaned = cleaned.replace(/([^\n])\s*(选项\s*[A-E]\s*[\uff1a:]) /g, '$1\n- **$2**')
     cleaned = cleaned.replace(/^\s*：\s*/gm, '')
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
 
@@ -184,9 +184,9 @@ const fetchAIAnalysis = async (item) => {
 onMounted(() => {
     // Set default range to Today
     const start = new Date()
-    start.setHours(0,0,0,0)
+    start.setHours(0, 0, 0, 0)
     const end = new Date()
-    end.setHours(23,59,59,999)
+    end.setHours(23, 59, 59, 999)
     queryParams.dateRange = [start, end]
     
     loadData()
@@ -198,7 +198,7 @@ onMounted(() => {
     <el-card shadow="never" class="page-header-card">
         <div class="page-header">
             <h2><el-icon><Warning /></el-icon> 错题本</h2>
-            <!-- Date Filter -->
+            <!-- Time Filter -->
             <div class="filter-area">
                 <el-date-picker
                     v-model="queryParams.dateRange"

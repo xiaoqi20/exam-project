@@ -9,6 +9,13 @@ export const useMenuStore = defineStore('menu', () => {
   const defaultMenus = {
     admin: [
       {
+        id: 0,
+        path: '/dashboard/welcome',
+        title: '首页',
+        icon: 'House',
+        children: []
+      },
+      {
         id: 1,
         path: '/dashboard/admin/user',
         title: '用户管理',
@@ -30,6 +37,13 @@ export const useMenuStore = defineStore('menu', () => {
       }
     ],
     teacher: [
+      {
+        id: 0,
+        path: '/dashboard/welcome',
+        title: '首页',
+        icon: 'House',
+        children: []
+      },
       {
         id: 3,
         path: '/dashboard/teacher/question',
@@ -69,6 +83,13 @@ export const useMenuStore = defineStore('menu', () => {
       }
     ],
     student: [
+      {
+        id: 0,
+        path: '/dashboard/welcome',
+        title: '首页',
+        icon: 'House',
+        children: []
+      },
       {
         id: 7,
         path: '/dashboard/student/exam',

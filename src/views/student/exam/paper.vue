@@ -5,10 +5,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, List, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { enterExam, submitExam } from '@/api/exam'
 import { useUserStore } from '@/stores/user'
+import { useExamStore } from '@/stores/exam'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const examStore = useExamStore()
 
 const loading = ref(false)
 const timer = ref(null)
@@ -47,7 +49,12 @@ const initRemainingTime = () => {
   const now = Date.now()
   let deadline
 
-  if (savedStartTime) {
+  // Practice mode always starts fresh
+  if (examInfo.id === 'practice') {
+      examInfo.startTime = now
+      // No deadline for practice usually, or reset it
+      deadline = now + examInfo.duration * 60 * 1000
+  } else if (savedStartTime) {
     examInfo.startTime = parseInt(savedStartTime)
   } else {
     examInfo.startTime = now
@@ -119,6 +126,32 @@ const prevQuestion = () => {
 const loadPaper = async () => {
   loading.value = true
   try {
+    // Practice Mode
+    if (examInfo.id === 'practice') {
+        // Reset timer for new practice
+        examInfo.startTime = Date.now()
+        // Optional: Clear old storage if exists to avoid conflicts
+        localStorage.removeItem(storageKey.value)
+        localStorage.removeItem(startTimeKey.value)
+        
+        const pData = examStore.practicePaper
+        if (pData && pData.questions) {
+            paperData.value = pData.questions.map(q => ({
+                ...q,
+                options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+            }))
+            // Initialize answers
+            paperData.value.forEach(q => {
+                if (q.type === 'multiple_choice') answers[q.id] = []
+            })
+        } else {
+            ElMessage.error('练习数据丢失，请重新进入')
+            router.replace('/dashboard')
+        }
+        loading.value = false
+        return
+    }
+
     const res = await enterExam(examInfo.id)
     const data = res 
 
@@ -170,6 +203,29 @@ const loadPaper = async () => {
 }
 
 const submitLogic = async () => {
+  // Practice Mode
+  if (examInfo.id === 'practice') {
+      let score = 0
+      let totalScore = 0
+      paperData.value.forEach(q => {
+          totalScore += q.score
+          const userAns = answers[q.id]
+          let formattedAns = ''
+          if (Array.isArray(userAns)) formattedAns = userAns.sort().join('')
+          else formattedAns = userAns || ''
+          
+          if (formattedAns === q.answer) score += q.score
+      })
+      
+      ElMessageBox.alert(`本次练习得分：${score} / ${totalScore}`, '练习结束', {
+          confirmButtonText: '返回',
+          callback: () => {
+              router.replace('/dashboard/student/exam/hall')
+          }
+      })
+      return
+  }
+
   loading.value = true
   try {
     const formattedAnswers = []
