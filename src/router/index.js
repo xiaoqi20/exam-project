@@ -114,6 +114,12 @@ const router = createRouter({
           meta: { roles: ['student'] }
         },
         {
+          path: 'student/mistake',
+          name: 'StudentMistake',
+          component: () => import('../views/student/mistake/index.vue'),
+          meta: { roles: ['student'] }
+        },
+        {
           path: 'student/profile/info',
           name: 'StudentProfileInfo',
           component: () => import('../views/profile/index.vue'),

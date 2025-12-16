@@ -88,6 +88,13 @@ export const useMenuStore = defineStore('menu', () => {
         ]
       },
       {
+        id: 10,
+        path: '/dashboard/student/mistake',
+        title: '错题本',
+        icon: 'Notebook',
+        children: []
+      },
+      {
         id: 9,
         path: '/dashboard/student/profile',
         title: '个人信息',
