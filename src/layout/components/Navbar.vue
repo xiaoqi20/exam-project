@@ -5,6 +5,8 @@ import { ArrowDown, User, SwitchButton, Fold, Expand } from '@element-plus/icons
 import { ElMessageBox, ElNotification } from 'element-plus'
 import { defineEmits, defineProps, onMounted, onUnmounted, ref } from 'vue'
 import { getExamPaperList } from '@/api/examPaper'
+import NotifyBell from '@/components/NotifyBell.vue'
+import { useNotifyStore } from '@/stores/notify' // 可选：用于测试
 
 const props = defineProps({
   isCollapse: {
@@ -116,6 +118,12 @@ const handleCommand = (command) => {
     </div>
 
     <div class="right-side">
+      <!-- 测试按钮 (仅供调试) -->
+      <el-button size="small" link @click="useNotifyStore().mockReceive()" style="margin-right: 15px;">测试消息</el-button>
+      
+      <!-- 通知铃铛 -->
+      <NotifyBell class="right-menu-item" style="margin-right: 20px;" />
+
       <el-dropdown class="avatar-container" @command="handleCommand" trigger="click">
         <div class="avatar-wrapper">
           <el-avatar :size="30" :src="userStore.userInfo.avatar || defaultAvatar" :icon="User" class="user-avatar" />

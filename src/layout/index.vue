@@ -1,13 +1,15 @@
 <script setup>
 import Sidebar from './components/Sidebar.vue'
 import Navbar from './components/Navbar.vue'
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
+import { useNotifyStore } from '@/stores/notify'
 
 const route = useRoute()
 const isCollapse = ref(false)
 const isMobile = ref(false)
 const drawerVisible = ref(false)
+const notifyStore = useNotifyStore()
 
 const checkMobile = () => {
   const w = window.innerWidth
@@ -36,10 +38,16 @@ watch(route, () => {
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  notifyStore.connect()
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
+})
+
+onBeforeUnmount(() => {
+  // 页面销毁前断开
+  notifyStore.disconnect()
 })
 </script>
 
