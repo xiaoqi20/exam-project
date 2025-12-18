@@ -50,6 +50,7 @@ export const useMenuStore = defineStore('menu', () => {
         title: '题库管理',
         icon: 'Document',
         children: [
+          { id: 30, path: '/dashboard/teacher/knowledge/list', title: '知识点管理', icon: '' },
           { id: 31, path: '/dashboard/teacher/question/list', title: '试题列表', icon: '' }
         ]
       },
@@ -113,6 +114,13 @@ export const useMenuStore = defineStore('menu', () => {
         path: '/dashboard/student/mistake',
         title: '错题本',
         icon: 'Notebook',
+        children: []
+      },
+      {
+        id: 11,
+        path: '/dashboard/student/knowledge/graph',
+        title: '知识图谱',
+        icon: 'Connection',
         children: []
       },
       {

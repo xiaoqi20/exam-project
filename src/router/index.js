@@ -65,6 +65,12 @@ const router = createRouter({
         },
         // Teacher Routes
         {
+          path: 'teacher/knowledge/list',
+          name: 'KnowledgeManage',
+          component: () => import('../views/teacher/knowledge/list.vue'),
+          meta: { roles: ['teacher'] }
+        },
+        {
           path: 'teacher/question/list',
           name: 'QuestionList',
           component: () => import('../views/teacher/question/list.vue'),
@@ -117,6 +123,12 @@ const router = createRouter({
           path: 'student/mistake',
           name: 'StudentMistake',
           component: () => import('../views/student/mistake/index.vue'),
+          meta: { roles: ['student'] }
+        },
+        {
+          path: 'student/knowledge/graph',
+          name: 'KnowledgeGraph',
+          component: () => import('../views/student/knowledge/graph.vue'),
           meta: { roles: ['student'] }
         },
         {

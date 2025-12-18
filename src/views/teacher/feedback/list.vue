@@ -1,36 +1,17 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { Search, ChatDotRound, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getFeedbackList, replyFeedback } from '@/api/feedback'
 
-// 模拟反馈数据
-const tableData = ref([
-  { 
-    id: 1, 
-    studentId: '2021001', 
-    studentName: '张三', 
-    examTitle: '计算机网络期中测试', 
-    questionContent: 'OSI七层模型中，负责路径选择的是哪一层？', 
-    content: '老师，我觉得这道题 B 选项也有道理，网络层不也负责寻址吗？', 
-    time: '2025-11-10 16:00', 
-    status: 'pending',
-    reply: ''
-  },
-  { 
-    id: 2, 
-    studentId: '2021002', 
-    studentName: '李四', 
-    examTitle: 'Java 基础语法测验', 
-    questionContent: 'String 类是基本数据类型吗？', 
-    content: '书上说 String 是引用类型，为什么这里选 False？', 
-    time: '2025-11-05 10:20', 
-    status: 'replied',
-    reply: '题目问的是“String 类是基本数据类型吗”，答案是 False，因为它是引用类型。你理解对了，但是可能看错题目选项了。'
-  }
-])
+// 真实反馈数据
+const tableData = ref([])
+const loading = ref(false)
 
 const queryParams = reactive({
-  status: ''
+  status: '',
+  page: 1,
+  size: 10
 })
 
 const statusOptions = [
@@ -43,12 +24,30 @@ const dialogVisible = ref(false)
 const currentFeedback = ref({})
 const replyContent = ref('')
 
+const loadData = async () => {
+    loading.value = true
+    try {
+        const res = await getFeedbackList(queryParams)
+        if (res && res.records) {
+            tableData.value = res.records
+        } else {
+            tableData.value = []
+        }
+    } catch (e) {
+        ElMessage.error('加载反馈失败')
+    } finally {
+        loading.value = false
+    }
+}
+
 const handleQuery = () => {
-  console.log('Query:', queryParams)
+  queryParams.page = 1
+  loadData()
 }
 
 const handleReset = () => {
   queryParams.status = ''
+  handleQuery()
 }
 
 const handleReply = (row) => {
@@ -57,21 +56,24 @@ const handleReply = (row) => {
   dialogVisible.value = true
 }
 
-const submitReply = () => {
+const submitReply = async () => {
   if (!replyContent.value.trim()) {
     ElMessage.warning('请输入回复内容')
     return
   }
   
-  // 模拟提交
-  const index = tableData.value.findIndex(item => item.id === currentFeedback.value.id)
-  if (index !== -1) {
-    tableData.value[index].status = 'replied'
-    tableData.value[index].reply = replyContent.value
+  try {
+      await replyFeedback({
+          id: currentFeedback.value.id,
+          reply: replyContent.value
+      })
+      
+      ElMessage.success('回复成功')
+      dialogVisible.value = false
+      loadData()
+  } catch (e) {
+      ElMessage.error('回复失败')
   }
-  
-  ElMessage.success('回复成功')
-  dialogVisible.value = false
 }
 
 const handleViewReply = (row) => {
@@ -79,6 +81,10 @@ const handleViewReply = (row) => {
     confirmButtonText: '确定'
   })
 }
+
+onMounted(() => {
+    loadData()
+})
 </script>
 
 <template>
@@ -102,10 +108,14 @@ const handleViewReply = (row) => {
     <el-card class="table-container" shadow="never">
       <el-table :data="tableData" border stripe style="width: 100%">
         <el-table-column prop="studentName" label="学生姓名" width="100" />
-        <el-table-column prop="examTitle" label="来源试卷" width="180" show-overflow-tooltip />
+        <el-table-column prop="examTitle" label="来源试卷" width="180" show-overflow-tooltip>
+          <template #default="scope">
+            {{ scope.row.examTitle || '自主练习' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="questionContent" label="相关题目" min-width="150" show-overflow-tooltip />
         <el-table-column prop="content" label="疑问内容" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="time" label="提交时间" width="160" sortable />
+        <el-table-column prop="createTime" label="提交时间" width="160" sortable />
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
             <el-tag :type="scope.row.status === 'pending' ? 'warning' : 'success'">

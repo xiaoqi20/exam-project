@@ -3,12 +3,14 @@ import { reactive, ref, computed, onMounted } from 'vue'
 import { Search, Plus, Edit, Delete, Refresh, Upload, More } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getQuestionList, addQuestion, updateQuestion, deleteQuestion, importQuestions } from '@/api/question'
+import { getKnowledgeTree } from '@/api/knowledge'
 
 const tableData = ref([])
 const total = ref(0)
 const loading = ref(false)
 const fileInputRef = ref(null)
 const isImporting = ref(false)
+const knowledgeOptions = ref([])
 
 const queryParams = reactive({
   page: 1,
@@ -26,13 +28,14 @@ const form = reactive({
   type: 'choice',
   content: '',
   score: 2,
+  knowledgeIds: [],
   options: [
     { key: 'A', value: '' },
     { key: 'B', value: '' },
     { key: 'C', value: '' },
     { key: 'D', value: '' }
   ],
-  answer: '', 
+  answer: '',
   answerArr: []
 })
 
@@ -102,6 +105,7 @@ const handleAdd = () => {
     type: 'choice',
     content: '',
     score: 2,
+    knowledgeIds: [],
     options: [
       { key: 'A', value: '' },
       { key: 'B', value: '' },
@@ -142,7 +146,8 @@ const handleEdit = (row) => {
   Object.assign(form, {
     ...row,
     options: parsedOptions,
-    answerArr: initialAnswerArr
+    answerArr: initialAnswerArr,
+    knowledgeIds: row.knowledgeIds || []
   })
   
   if (formRef.value) formRef.value.clearValidate()
@@ -208,7 +213,8 @@ const handleSubmit = async () => {
               content: form.content,
               score: form.score,
               answer: finalAnswer,
-              options: finalOptions
+              options: finalOptions,
+              knowledgeIds: form.knowledgeIds
             }
       try {
           if (form.id) {
@@ -261,10 +267,19 @@ const onFileChange = async (event) => {
 
 const handleBatchImport = () => { if (fileInputRef.value) fileInputRef.value.click() }
 
+const loadKnowledgeOptions = async () => {
+    try {
+        const res = await getKnowledgeTree()
+        knowledgeOptions.value = Array.isArray(res) ? res : (res.data || [])
+    } catch (e) {
+        console.error('Failed to load knowledge tree:', e)
+    }
+}
+
 onMounted(() => {
     loadData()
-})
-</script>
+    loadKnowledgeOptions()
+})</script>
 
 <template>
   <div class="app-container">
@@ -370,21 +385,41 @@ onMounted(() => {
     </el-card>
 
     <!-- 弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="90%">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="70px" :label-position="'top'">
-        <el-form-item label="题型" prop="type">
-          <el-radio-group v-model="form.type" size="small">
-            <el-radio-button label="choice">单选</el-radio-button>
-            <el-radio-button label="multiple_choice">多选</el-radio-button>
-            <el-radio-button label="true_false">判断</el-radio-button>
-          </el-radio-group>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="650px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px" label-position="top">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="题型" prop="type">
+              <el-radio-group v-model="form.type" size="small">
+                <el-radio-button label="choice">单选</el-radio-button>
+                <el-radio-button label="multiple_choice">多选</el-radio-button>
+                <el-radio-button label="true_false">判断</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="分值" prop="score">
+              <el-input-number v-model="form.score" :min="1" :max="100" style="width: 100%;" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="关联知识点" prop="knowledgeIds">
+          <el-tree-select
+            v-model="form.knowledgeIds"
+            :data="knowledgeOptions"
+            :props="{ label: 'name', children: 'children' }"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择知识点"
+            style="width: 100%"
+            node-key="id"
+            check-strictly
+          />
         </el-form-item>
 
-        <el-form-item label="分值" prop="score">
-          <el-input-number v-model="form.score" :min="1" :max="100" style="width: 120px;" />
-        </el-form-item>
-
-        <el-form-item label="题目" prop="content">
+        <el-form-item label="题目内容" prop="content">
           <el-input 
             v-model="form.content" 
             type="textarea" 

@@ -1,8 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Check, Close, MagicStick, Loading } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, Close, MagicStick, Loading, ArrowUp, ArrowDown, ChatLineRound } from '@element-plus/icons-vue'
 import { getScoreDetail } from '@/api/exam'
+import { addFeedback } from '@/api/feedback'
 import { ElMessage } from 'element-plus'
 import MarkdownViewer from '@/components/MarkdownViewer.vue'
 import { useUserStore } from '@/stores/user'
@@ -15,7 +16,40 @@ const loading = ref(false)
 const paperInfo = ref({})
 const questions = ref([])
 
+// Feedback Dialog State
+const feedbackDialogVisible = ref(false)
+const currentFeedbackQ = ref({})
+const feedbackContent = ref('')
+
 const scoreId = route.params.id
+
+// Open Feedback Dialog
+const handleFeedback = (q) => {
+    currentFeedbackQ.value = q
+    feedbackContent.value = ''
+    feedbackDialogVisible.value = true
+}
+
+// Submit Feedback
+const submitFeedback = async () => {
+    if (!feedbackContent.value.trim()) {
+        ElMessage.warning('请输入您的疑问')
+        return
+    }
+    
+    try {
+        await addFeedback({
+            questionId: currentFeedbackQ.value.id || currentFeedbackQ.value.questionId,
+            scoreId: scoreId,
+            examId: paperInfo.value.examId, // 关联试卷ID
+            content: feedbackContent.value
+        })
+        ElMessage.success('反馈已提交，老师会尽快回复')
+        feedbackDialogVisible.value = false
+    } catch (e) {
+        ElMessage.error('提交失败')
+    }
+}
 
 const loadDetail = async () => {
   loading.value = true
@@ -24,10 +58,15 @@ const loadDetail = async () => {
     const data = res
     
     if (data) {
-       paperInfo.value = data.paperInfo || {
-           title: data.title,
+       // Ensure we get the ID, checking both root and nested paperInfo
+       const foundId = data.examId || data.paperId || (data.paperInfo && (data.paperInfo.examId || data.paperInfo.paperId))
+       
+       paperInfo.value = {
+           ...(data.paperInfo || {}),
+           title: data.title || (data.paperInfo && data.paperInfo.title),
            studentScore: data.studentScore || data.score,
-           totalScore: data.totalScore || 100
+           totalScore: data.totalScore || 100,
+           examId: foundId // Force inject the found ID
        }
        
        const rawQuestions = data.questions || []
@@ -58,8 +97,10 @@ const loadDetail = async () => {
                type,
                options,
                isCorrect: q.studentScore === q.score || q.answer === q.studentAnswer,
-               analysis: q.analysis || '', // Default to empty string
-               aiLoading: false // Track AI loading state
+               analysis: q.analysis || '',
+               aiLoading: false,
+               isExpanded: false,
+               teacherReply: q.teacherReply || '' 
            }
        })
     }
@@ -71,20 +112,11 @@ const loadDetail = async () => {
   }
 }
 
-// Helper to clean spacing issues from AI response
-const cleanAIContent = (text) => {
-    if (!text) return ''
-    
-    // 仅保留最基础的处理，避免误伤
-    return text
-        // 统一换行符
-        .replace(/\r\n/g, '\n')
-}
-
 // Fetch AI Analysis Stream
 const fetchAIAnalysis = async (q) => {
     if (q.aiLoading) return
     q.aiLoading = true
+    q.isExpanded = true
     q.analysis = '' 
     let rawAnalysis = ''
     
@@ -93,15 +125,10 @@ const fetchAIAnalysis = async (q) => {
         const url = `/api/ai/analyze/stream?questionId=${q.id || q.questionId}&studentAnswer=${encodeURIComponent(q.studentAnswer || '')}`
         
         const response = await fetch(url, {
-            headers: {
-                'token': token,
-                'Accept': 'text/event-stream'
-            }
+            headers: { 'token': token, 'Accept': 'text/event-stream' }
         })
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
@@ -109,34 +136,22 @@ const fetchAIAnalysis = async (q) => {
         while (true) {
             const { done, value } = await reader.read()
             if (done) break
-            
             const chunk = decoder.decode(value, { stream: true })
             const lines = chunk.split('\n')
-            
             for (const line of lines) {
                 if (line.startsWith('data:')) {
-                    // 去掉 'data:' 前缀
                     let data = line.slice(5)
-                    
                     if (data.trim() === '[DONE]') break
-                    
-                    // SSE 标准中 data: 后通常有个空格，可以去掉
-                    if (data.startsWith(' ')) {
-                        data = data.slice(1)
-                    }
-                    
-                    // 处理可能的转义换行符 (如果后端发的是 JSON 字符串形式)
+                    if (data.startsWith(' ')) data = data.slice(1)
                     data = data.replace(/\\n/g, '\n')
-                    
                     rawAnalysis += data
-                    q.analysis = cleanAIContent(rawAnalysis)
+                    q.analysis = rawAnalysis
                 }
             }
         }
     } catch (e) {
         console.error('AI Stream Error:', e)
         ElMessage.error('AI 解析生成失败')
-        q.analysis += '\n\n*(获取解析失败)*'
     } finally {
         q.aiLoading = false
     }
@@ -145,7 +160,6 @@ const fetchAIAnalysis = async (q) => {
 const getOptionClass = (q, key) => {
     const isUserSelected = (q.studentAnswer || '').includes(key)
     const isCorrectAns = (q.answer || q.correctAnswer || '').includes(key)
-    
     if (isCorrectAns) return 'correct-option'
     if (isUserSelected && !isCorrectAns) return 'wrong-option'
     return ''
@@ -191,8 +205,8 @@ onMounted(() => {
                      <span class="q-content">{{ index + 1 }}. {{ q.content }}</span>
                      
                      <div class="q-status">
-                         <el-tag v-if="q.isCorrect" type="success" effect="dark" class="status-tag"><el-icon><Check /></el-icon> 正确 (得{{ q.studentScore || q.score }}分)</el-tag>
-                         <el-tag v-else type="danger" effect="dark" class="status-tag"><el-icon><Close /></el-icon> 错误 (得{{ q.studentScore || 0 }}分)</el-tag>
+                         <el-tag v-if="q.isCorrect" type="success" effect="dark" class="status-tag"><el-icon><Check /></el-icon> 正确</el-tag>
+                         <el-tag v-else type="danger" effect="dark" class="status-tag"><el-icon><Close /></el-icon> 错误</el-tag>
                      </div>
                  </div>
              </template>
@@ -200,12 +214,7 @@ onMounted(() => {
              <!-- Options Area -->
              <div class="options-list">
                  <template v-if="q.type === 'choice' || q.type === 'multiple_choice'">
-                     <div 
-                        v-for="(val, key) in q.options" 
-                        :key="key" 
-                        class="option-item"
-                        :class="getOptionClass(q, key)"
-                     >
+                     <div v-for="(val, key) in q.options" :key="key" class="option-item" :class="getOptionClass(q, key)">
                          <span class="opt-label">{{ key }}.</span>
                          <span class="opt-text">{{ val }}</span>
                          <el-icon v-if="(q.answer || q.correctAnswer || '').includes(key)" class="icon-indicator success"><Check /></el-icon>
@@ -215,16 +224,12 @@ onMounted(() => {
                  
                  <template v-if="q.type === 'true_false'">
                       <div class="option-item" :class="getOptionClass(q, 'A')">
-                          <span class="opt-label">A.</span>
-                          <span class="opt-text">正确</span>
+                          <span class="opt-label">A.</span><span class="opt-text">正确</span>
                           <el-icon v-if="(q.answer || q.correctAnswer || '') === 'A'" class="icon-indicator success"><Check /></el-icon>
-                          <el-icon v-if="(q.studentAnswer || '') === 'A' && (q.answer || q.correctAnswer || '') !== 'A'" class="icon-indicator danger"><Close /></el-icon>
                       </div>
                       <div class="option-item" :class="getOptionClass(q, 'B')">
-                          <span class="opt-label">B.</span>
-                          <span class="opt-text">错误</span>
+                          <span class="opt-label">B.</span><span class="opt-text">错误</span>
                           <el-icon v-if="(q.answer || q.correctAnswer || '') === 'B'" class="icon-indicator success"><Check /></el-icon>
-                          <el-icon v-if="(q.studentAnswer || '') === 'B' && (q.answer || q.correctAnswer || '') !== 'B'" class="icon-indicator danger"><Close /></el-icon>
                       </div>
                  </template>
              </div>
@@ -239,21 +244,34 @@ onMounted(() => {
                     <span class="value text-success">{{ q.answer || q.correctAnswer }}</span>
                  </div>
                  
-                 <!-- Analysis Section -->
+                 <!-- Analysis Section with Collapse -->
                  <div class="analysis-row analysis-text">
                     <span class="label">解析：</span>
                     <div class="value" style="flex: 1">
                         <template v-if="q.analysis">
-                            <MarkdownViewer :content="q.analysis" />
-                            <span v-if="q.aiLoading" class="cursor"></span>
+                            <div :class="['analysis-content', q.isExpanded ? 'expanded' : 'collapsed']">
+                                <MarkdownViewer :content="q.analysis" />
+                            </div>
+                            <div class="expand-toggle-bar">
+                                <el-button 
+                                    link 
+                                    type="primary" 
+                                    size="small" 
+                                    @click="q.isExpanded = !q.isExpanded"
+                                >
+                                    {{ q.isExpanded ? '收起解析' : '展开全文' }}
+                                    <el-icon class="el-icon--right">
+                                        <component :is="q.isExpanded ? 'ArrowUp' : 'ArrowDown'" />
+                                    </el-icon>
+                                </el-button>
+                            </div>
                         </template>
-                        
                         <div v-else>
                             <el-button 
                                 type="primary" 
                                 plain 
                                 size="small" 
-                                :loading="q.aiLoading"
+                                :loading="q.aiLoading" 
                                 :icon="MagicStick"
                                 @click="fetchAIAnalysis(q)"
                             >
@@ -262,257 +280,86 @@ onMounted(() => {
                         </div>
                     </div>
                  </div>
-                 <div v-if="q.analysis && !q.aiLoading" style="margin-left: 80px; margin-top: 5px;">
-                      <el-button link type="primary" size="small" @click="fetchAIAnalysis(q)">重新生成</el-button>
+                 
+                 <!-- Feedback Buttons -->
+                 <div v-if="!q.aiLoading" style="margin-left: 80px; margin-top: 10px; display: flex; gap: 10px;">
+                      <el-button v-if="q.analysis" link type="primary" size="small" @click="fetchAIAnalysis(q)">重新生成</el-button>
+                      <el-button link type="warning" size="small" @click="handleFeedback(q)">此题不懂?</el-button>
+                 </div>
+
+                 <!-- Teacher Reply Section -->
+                 <div v-if="q.teacherReply" class="teacher-reply-box">
+                    <div class="reply-header">
+                        <el-icon><ChatLineRound /></el-icon>
+                        <span>老师的解答：</span>
+                    </div>
+                    <div class="reply-content">{{ q.teacherReply }}</div>
                  </div>
              </div>
-
          </el-card>
     </div>
+    
+    <!-- Feedback Dialog -->
+    <el-dialog v-model="feedbackDialogVisible" title="提交疑问" width="500px">
+        <p style="margin-bottom: 10px; color: #606266;">
+            <strong>针对题目：</strong> {{ currentFeedbackQ.content?.substring(0, 30) }}...
+        </p>
+        <el-input v-model="feedbackContent" type="textarea" :rows="4" placeholder="请详细描述您的疑问..." />
+        <template #footer>
+            <el-button @click="feedbackDialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="submitFeedback">提交反馈</el-button>
+        </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.detail-container {
-    padding: 20px;
-    background: #f5f7fa;
-    min-height: 100vh;
-}
-.header {
-    background: #fff;
-    padding: 20px;
-    margin-bottom: 20px;
-    border-radius: 4px;
-    box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);
-}
-.score-board {
-    display: flex;
-    align-items: baseline;
-    font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
-}
-.label { color: #606266; font-size: 14px; margin-right: 4px;}
-.score-val {
-    font-size: 28px;
-    font-weight: bold;
-    color: #409EFF;
-}
-.total {
-    color: #909399;
-    font-size: 16px;
-}
+.detail-container { padding: 20px; background: #f5f7fa; min-height: 100vh; }
+.header { background: #fff; padding: 20px; margin-bottom: 20px; border-radius: 4px; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); }
+.score-board { display: flex; align-items: baseline; }
+.score-val { font-size: 28px; font-weight: bold; color: #409EFF; }
+.total { color: #909399; font-size: 16px; }
+.question-card { margin-bottom: 20px; border: none; box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+.q-header { display: flex; flex-wrap: wrap; gap: 12px; }
+.q-content { font-weight: 600; font-size: 16px; flex: 1; color: #303133; }
+.q-status { margin-left: auto; }
 
-.question-card {
-    margin-bottom: 20px;
-    border: none;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-}
-
-.q-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 12px;
-    line-height: 1.5;
-}
-.q-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-}
-.q-score { color: #909399; font-size: 13px; }
-.q-content {
-    font-weight: 600;
-    font-size: 16px;
-    flex: 1;
-    min-width: 200px;
-    color: #303133;
-}
-.q-status {
-    flex-shrink: 0;
-    margin-left: auto;
-    display: flex;
-}
-.status-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 13px;
-    padding: 4px 12px;
-    height: auto;
-    line-height: 1.4;
-    white-space: normal;
-    min-height: 28px;
-}
-
-.options-list {
-    margin: 15px 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-.option-item {
-    padding: 14px 18px;
-    border: 1px solid #e4e7ed;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    background: #fff;
-    transition: all 0.3s;
-    font-size: 15px;
-}
-.option-item:hover {
-    border-color: #c0c4cc;
-    background-color: #fafafa;
-}
-.opt-label {
-    font-weight: bold;
-    margin-right: 12px;
-    width: 24px;
-    color: #606266;
-}
-.opt-text { flex: 1; color: #606266; line-height: 1.4; }
-
-.icon-indicator {
-    font-size: 20px;
-    margin-left: 12px;
-    font-weight: bold;
-}
+.options-list { margin: 15px 0; display: flex; flex-direction: column; gap: 12px; }
+.option-item { padding: 12px 18px; border: 1px solid #e4e7ed; border-radius: 6px; display: flex; align-items: center; background: #fff; font-size: 15px; }
+.opt-label { font-weight: bold; margin-right: 12px; width: 24px; color: #606266; }
+.opt-text { flex: 1; color: #606266; }
+.icon-indicator { font-size: 20px; margin-left: 12px; }
 .icon-indicator.success { color: #67C23A; }
-.icon-indicator.danger { color: #F56C6C; }
 
-.correct-option {
-    background-color: #f0f9eb;
-    border-color: #c2e7b0;
-    color: #67C23A;
-}
-.correct-option .opt-label, .correct-option .opt-text { color: #67C23A; }
+.correct-option { background-color: #f0f9eb; border-color: #c2e7b0; color: #67C23A; }
+.wrong-option { background-color: #fef0f0; border-color: #fbc4c4; color: #F56C6C; }
 
-.wrong-option {
-    background-color: #fef0f0;
-    border-color: #fbc4c4;
-    color: #F56C6C;
-}
-.wrong-option .opt-label, .wrong-option .opt-text { color: #F56C6C; }
+.analysis-box { margin-top: 20px; padding: 16px 20px; background: #f8f9fa; border-radius: 6px; border: 1px solid #ebeef5; }
+.analysis-row { margin-bottom: 8px; display: flex; align-items: flex-start; }
+.analysis-row .label { font-weight: bold; width: 80px; flex-shrink: 0; color: #606266; }
 
-.analysis-box {
-    margin-top: 20px;
-    padding: 16px 20px;
-    background: #f8f9fa;
-    border-radius: 6px;
-    border: 1px solid #ebeef5;
+/* Folding styles */
+.analysis-content { overflow: hidden; transition: max-height 0.3s ease-in-out; }
+.analysis-content.collapsed { 
+    max-height: 80px; 
+    mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
 }
-.analysis-row {
-    margin-bottom: 8px;
-    display: flex;
-    align-items: flex-start;
-}
-.analysis-row:last-child { margin-bottom: 0; }
-.analysis-row .label {
-    font-weight: bold;
-    width: 80px;
-    flex-shrink: 0;
-    color: #606266;
-}
-.analysis-text .value {
-    color: #606266;
-    line-height: 1.6;
-}
+.analysis-content.expanded { max-height: 3000px; }
+.expand-toggle-bar { margin-top: 5px; }
+
+/* Teacher Reply Section */
+.teacher-reply-box { margin-top: 15px; padding: 12px 16px; background: #f0f9eb; border-left: 4px solid #67C23A; border-radius: 4px; }
+.reply-header { display: flex; align-items: center; gap: 6px; color: #67C23A; font-weight: bold; margin-bottom: 6px; font-size: 14px; }
+.reply-content { color: #606266; font-size: 14px; line-height: 1.6; }
 
 .text-success { color: #67C23A; font-weight: bold; }
 .text-danger { color: #F56C6C; font-weight: bold; }
 
-/* AI Cursor Animation */
-.cursor {
-    display: inline-block;
-    width: 2px;
-    height: 14px;
-    background: #d63384; /* Match the bold color for consistency */
-    vertical-align: middle;
-    margin-left: 2px;
-    animation: blink 1s infinite;
-}
-
-@keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-}
-
-/* Responsive Adjustments */
 @media (max-width: 768px) {
-    .detail-container {
-        padding: 10px; /* Smaller padding */
-    }
-    
-    .header {
-        padding: 12px;
-        margin-bottom: 12px;
-    }
-
-    /* Make page header content stack */
-    :deep(.el-page-header__header) {
-        flex-wrap: wrap;
-    }
-    :deep(.el-page-header__content) {
-        font-size: 16px;
-    }
-
-    /* Score Board adjustment */
-    .score-board {
-        margin-top: 8px; /* Stack below title */
-        font-size: 14px;
-    }
-    .score-val { font-size: 20px; }
-
-    /* Question Card */
-    .question-card {
-        margin-bottom: 12px;
-    }
-    :deep(.el-card__header) {
-        padding: 12px;
-    }
-    :deep(.el-card__body) {
-        padding: 12px;
-    }
-
-    /* Header Layout */
-    .q-header {
-        flex-direction: column; /* Stack items */
-        align-items: flex-start;
-        gap: 8px;
-    }
-    .q-content {
-        font-size: 15px;
-        line-height: 1.6;
-        min-width: 100%; /* Full width */
-    }
-    .q-status {
-        margin-left: 0;
-        width: 100%;
-        justify-content: flex-end; /* Align right */
-    }
-
-    /* Options */
-    .option-item {
-        padding: 10px 12px;
-        font-size: 14px;
-    }
-
-    /* Analysis Box */
-    .analysis-box {
-        padding: 12px;
-        margin-top: 16px;
-    }
-    .analysis-row {
-        flex-direction: column; /* Stack Label and Value */
-        align-items: flex-start;
-        gap: 4px;
-    }
-    .analysis-row .label {
-        width: 100%;
-        margin-bottom: 2px;
-        color: #909399;
-        font-size: 13px;
-    }
+    .detail-container { padding: 10px; }
+    .q-header { flex-direction: column; }
+    .q-status { width: 100%; justify-content: flex-end; display: flex; }
+    .analysis-row { flex-direction: column; }
 }
 </style>

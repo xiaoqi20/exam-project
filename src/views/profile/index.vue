@@ -1,167 +1,232 @@
 <script setup>
-import { reactive, ref, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { ElMessage } from 'element-plus'
-import { User, Iphone, Lock } from '@element-plus/icons-vue'
+import { getStudentDetail } from '@/api/student'
+import { getScoreHistory } from '@/api/exam' 
+import { updateProfile, updatePassword } from '@/api/auth'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { User, Lock, Timer, Postcard, Iphone, Message, School } from '@element-plus/icons-vue'
 
+const router = useRouter()
 const userStore = useUserStore()
+const loading = ref(false)
 const activeTab = ref('info')
-const isMobile = ref(false)
 
-const checkMobile = () => {
-    isMobile.value = window.innerWidth < 768
-}
-
-onMounted(() => {
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
+// User Data: Map to backend fields (stuId, sname, sex, className, phone)
+const userInfo = ref({
+  stuId: '',
+  username: '',
+  sname: '', 
+  sex: '',
+  phone: '',
+  email: '',
+  className: '',
+  role: 'student'
 })
 
-onUnmounted(() => window.removeEventListener('resize', checkMobile))
+// Activity Timeline
+const activities = ref([])
 
-// 模拟当前用户信息
-const userInfoForm = reactive({
-  username: userStore.userInfo.name,
-  phone: '13800138000', // 示例数据
-  avatar: userStore.userInfo.avatar || 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png'
-})
-
-const passwordForm = reactive({
+// Password Form
+const pwdForm = reactive({
   oldPassword: '',
   newPassword: '',
   confirmPassword: ''
 })
+const pwdRef = ref(null)
 
-const passwordFormRef = ref(null)
-
-const passwordRules = {
-  oldPassword: [{ required: true, message: '请输入旧密码', trigger: 'blur' }],
-  newPassword: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
-  ],
-  confirmPassword: [
-    { required: true, message: '请再次输入新密码', trigger: 'blur' },
-    {
-      validator: (rule, value, callback) => {
-        if (value !== passwordForm.newPassword) {
-          callback(new Error('两次输入密码不一致'))
-        } else {
-          callback()
+// Load Data
+const loadProfile = async () => {
+  loading.value = true
+  try {
+    // 1. Get Detail
+    if (userStore.role === 'student' || userStore.role === '3') {
+        const res = await getStudentDetail(userStore.userInfo.id)
+        if (res) {
+            // Merge response into userInfo (res contains stuId, sname, sex, etc.)
+            userInfo.value = { ...userInfo.value, ...res }
         }
-      },
-      trigger: 'blur'
+    } else {
+        // Fallback for teacher/admin
+        userInfo.value.sname = userStore.userInfo.name
+        userInfo.value.username = userStore.userInfo.username || 'admin'
     }
-  ]
+
+    // 2. Get Activities (Exam History)
+    if (userStore.role === 'student') {
+        const scoreRes = await getScoreHistory(userStore.userInfo.id, { page: 1, size: 5 })
+        if (scoreRes && scoreRes.records) {
+            activities.value = scoreRes.records.map(item => ({
+                content: `参加了考试《${item.title || item.paperName || '未知试卷'}》`,
+                timestamp: item.createTime || item.submitTime,
+                score: item.score || item.userScore,
+                type: 'primary',
+                icon: Timer
+            }))
+        }
+    }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
 }
 
-const handleUpdateInfo = () => {
-  // TODO: 调用更新用户信息 API
-  userStore.userInfo.name = userInfoForm.username
-  userStore.userInfo.avatar = userInfoForm.avatar
-  ElMessage.success('个人信息修改成功')
+// Update Info
+const handleUpdateInfo = async () => {
+  try {
+    // 调用通用的个人资料更新接口 (/user/profile)
+    await updateProfile({
+        sname: userInfo.value.sname,
+        sex: userInfo.value.sex,
+        phone: userInfo.value.phone,
+        email: userInfo.value.email
+    })
+    ElMessage.success('资料更新成功')
+    // Update store if name changed
+    userStore.userInfo.name = userInfo.value.sname
+  } catch (e) {
+    console.error(e)
+    ElMessage.error('更新失败')
+  }
 }
 
-const handleChangePassword = async (formEl) => {
-  if (!formEl) return
-  await formEl.validate((valid) => {
-    if (valid) {
-      // TODO: 调用修改密码 API
-      ElMessage.success('密码修改成功，请重新登录')
+// Update Password
+const handleUpdatePwd = async () => {
+    if (!pwdForm.oldPassword || !pwdForm.newPassword) {
+        ElMessage.warning('请输入完整密码信息')
+        return
     }
-  })
+    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+        ElMessage.error('两次输入密码不一致')
+        return
+    }
+
+    try {
+        await ElMessageBox.confirm('修改密码后需要重新登录，是否继续？', '提示', { type: 'warning' })
+        
+        await updatePassword({
+            oldPassword: pwdForm.oldPassword,
+            newPassword: pwdForm.newPassword
+        })
+        
+        ElMessage.success('密码修改成功，请重新登录')
+        
+        // Logout
+        userStore.logout()
+        router.push('/login')
+    } catch (e) {
+        if (e !== 'cancel') {
+            console.error(e)
+            ElMessage.error('密码修改失败，请检查旧密码是否正确')
+        }
+    }
 }
+
+onMounted(() => {
+  loadProfile()
+})
 </script>
 
 <template>
   <div class="app-container">
     <el-row :gutter="20">
-      <!-- Left: User Card -->
-      <el-col :span="8" :xs="24" class="mb-20">
-        <el-card class="box-card">
-          <template #header>
-            <div class="clearfix">
-              <span>个人信息</span>
-            </div>
-          </template>
-          <div class="text-center user-profile-header">
-            <el-avatar :size="100" :src="userInfoForm.avatar" class="user-avatar" />
-            <div class="user-name">{{ userStore.userInfo.name }}</div>
-            <div class="user-role">
-                {{ userStore.role === 1 ? '管理员' : (userStore.role === 2 ? '教师' : '学生') }}
+      <!-- Left: Profile Card -->
+      <el-col :span="8" :xs="24">
+        <el-card class="box-card profile-card">
+          <div class="avatar-wrapper">
+            <el-avatar :size="100" src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" />
+            <div class="user-role-tag">
+                <el-tag>{{ userStore.role === 'student' ? '学生' : '教师' }}</el-tag>
             </div>
           </div>
-          <div class="user-info-section">
-            <div class="user-info-item">
-              <div class="label">
-                <el-icon><User /></el-icon>
-                <span>登录账号</span>
-              </div>
-              <div class="value">{{ userInfoForm.username }}</div>
+          <div class="user-header">
+            <h3>{{ userInfo.sname || 'User' }}</h3>
+            <p class="user-bio">学无止境，勤则可达。</p>
+          </div>
+          
+          <div class="user-info-list">
+            <div class="info-item" v-if="userInfo.stuId">
+                <el-icon><Postcard /></el-icon>
+                <span>学号：{{ userInfo.stuId }}</span>
             </div>
-            <div class="user-info-item">
-              <div class="label">
+            <div class="info-item" v-if="userInfo.className">
+                <el-icon><School /></el-icon>
+                <span>班级：{{ userInfo.className }}</span>
+            </div>
+            <div class="info-item" v-if="userInfo.phone">
                 <el-icon><Iphone /></el-icon>
-                <span>手机号码</span>
-              </div>
-              <div class="value">{{ userInfoForm.phone }}</div>
-            </div>
-            <div class="user-info-item">
-              <div class="label">
-                <el-icon><Lock /></el-icon>
-                <span>安全状态</span>
-              </div>
-              <div class="value"><el-tag type="success" size="small">安全</el-tag></div>
+                <span>电话：{{ userInfo.phone }}</span>
             </div>
           </div>
         </el-card>
       </el-col>
-      
-      <!-- Right: Settings -->
+
+      <!-- Right: Tabs -->
       <el-col :span="16" :xs="24">
-        <el-card>
-          <template #header>
-            <div class="clearfix">
-              <span>基本资料</span>
-            </div>
-          </template>
+        <el-card class="box-card">
           <el-tabs v-model="activeTab">
+            <!-- Tab 1: Basic Info Form -->
             <el-tab-pane label="基本资料" name="info">
-              <el-form 
-                :model="userInfoForm" 
-                :label-position="isMobile ? 'top' : 'left'"
-                label-width="80px"
-              >
-                <el-form-item label="用户昵称">
-                  <el-input v-model="userInfoForm.username" />
+              <el-form label-position="top" :model="userInfo">
+                <el-form-item label="真实姓名">
+                  <el-input v-model="userInfo.sname" />
+                </el-form-item>
+                <el-form-item label="性别">
+                  <el-radio-group v-model="userInfo.sex">
+                    <el-radio label="男">男</el-radio>
+                    <el-radio label="女">女</el-radio>
+                  </el-radio-group>
                 </el-form-item>
                 <el-form-item label="手机号码">
-                  <el-input v-model="userInfoForm.phone" maxlength="11" />
+                  <el-input v-model="userInfo.phone" />
+                </el-form-item>
+                <el-form-item label="电子邮箱">
+                  <el-input v-model="userInfo.email" />
                 </el-form-item>
                 <el-form-item>
-                  <el-button type="primary" @click="handleUpdateInfo">保存配置</el-button>
+                  <el-button type="primary" @click="handleUpdateInfo">保存修改</el-button>
                 </el-form-item>
               </el-form>
             </el-tab-pane>
-            <el-tab-pane label="修改密码" name="password">
-              <el-form 
-                ref="passwordFormRef" 
-                :model="passwordForm" 
-                :rules="passwordRules" 
-                :label-position="isMobile ? 'top' : 'left'"
-                label-width="80px"
-              >
-                <el-form-item label="旧密码" prop="oldPassword">
-                  <el-input v-model="passwordForm.oldPassword" type="password" show-password />
+
+            <!-- Tab 2: Activity Timeline -->
+            <el-tab-pane label="最近活动" name="activity">
+              <div class="timeline-wrapper">
+                  <el-timeline v-if="activities.length > 0">
+                    <el-timeline-item
+                      v-for="(activity, index) in activities"
+                      :key="index"
+                      :icon="activity.icon"
+                      :type="activity.type"
+                      :color="index === 0 ? '#0bbd87' : ''"
+                      :timestamp="activity.timestamp?.replace('T', ' ')"
+                    >
+                      {{ activity.content }} 
+                      <el-tag size="small" type="success" v-if="activity.score !== undefined" style="margin-left: 10px">
+                        {{ activity.score }}分
+                      </el-tag>
+                    </el-timeline-item>
+                  </el-timeline>
+                  <el-empty v-else description="暂无活动记录" />
+              </div>
+            </el-tab-pane>
+
+            <!-- Tab 3: Security -->
+            <el-tab-pane label="账号安全" name="security">
+               <el-form label-position="top" :model="pwdForm" ref="pwdRef">
+                <el-form-item label="旧密码">
+                  <el-input v-model="pwdForm.oldPassword" type="password" show-password />
                 </el-form-item>
-                <el-form-item label="新密码" prop="newPassword">
-                  <el-input v-model="passwordForm.newPassword" type="password" show-password />
+                <el-form-item label="新密码">
+                  <el-input v-model="pwdForm.newPassword" type="password" show-password />
                 </el-form-item>
-                <el-form-item label="确认密码" prop="confirmPassword">
-                  <el-input v-model="passwordForm.confirmPassword" type="password" show-password />
+                <el-form-item label="确认密码">
+                  <el-input v-model="pwdForm.confirmPassword" type="password" show-password />
                 </el-form-item>
                 <el-form-item>
-                  <el-button type="primary" @click="handleChangePassword(passwordFormRef)">保存</el-button>
+                  <el-button type="danger" @click="handleUpdatePwd">修改密码</el-button>
                 </el-form-item>
               </el-form>
             </el-tab-pane>
@@ -173,76 +238,30 @@ const handleChangePassword = async (formEl) => {
 </template>
 
 <style scoped>
-.app-container {
-  padding: 20px;
+.app-container { padding: 20px; }
+.box-card { margin-bottom: 20px; }
+
+.profile-card { text-align: center; }
+.avatar-wrapper { position: relative; display: inline-block; margin-bottom: 15px; }
+.user-role-tag { position: absolute; bottom: 0; right: 0; }
+
+.user-header h3 { margin: 0 0 5px; color: #303133; }
+.user-bio { color: #909399; font-size: 14px; margin-bottom: 20px; }
+
+.user-info-list { text-align: left; padding: 0 20px; }
+.info-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    color: #606266;
+    font-size: 14px;
 }
 
-.text-center { text-align: center; }
-.mb-20 { margin-bottom: 20px; }
+.timeline-wrapper { padding: 10px; }
 
-.user-profile-header {
-  padding: 20px 0;
-  border-bottom: 1px solid #f0f2f5;
-  margin-bottom: 20px;
-}
-
-.user-avatar {
-  border: 4px solid #fff;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s;
-}
-.user-avatar:hover {
-  transform: scale(1.05);
-}
-
-.user-name {
-  font-size: 24px;
-  font-weight: 600;
-  margin-top: 15px;
-  color: #303133;
-}
-
-.user-role {
-  font-size: 14px;
-  color: #909399;
-  margin-top: 5px;
-}
-
-.user-info-section {
-  padding: 0 10px;
-}
-
-.user-info-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px 0;
-  border-bottom: 1px solid #f0f2f5;
-  font-size: 14px;
-}
-
-.user-info-item:last-child {
-  border-bottom: none;
-}
-
-.user-info-item .label {
-  display: flex;
-  align-items: center;
-  color: #606266;
-}
-
-.user-info-item .label .el-icon {
-  margin-right: 8px;
-  font-size: 16px;
-}
-
-.user-info-item .value {
-  color: #303133;
-  font-weight: 500;
-}
-
-/* Mobile adjustments */
 @media (max-width: 768px) {
     .app-container { padding: 10px; }
+    .el-col { margin-bottom: 10px; }
 }
 </style>
