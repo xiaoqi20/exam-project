@@ -43,11 +43,13 @@ export const useNotifyStore = defineStore('notify', () => {
         messages.value.unshift(msg)
         
         // 弹窗提示 (右上角浮窗)
+        const isAI = msg.source === 'AI' || msg.type === 'ai_reply'
         ElNotification({
-          title: msg.title || '新消息',
+          title: isAI ? 'AI 助教提醒' : (msg.title || '新消息'),
           message: msg.content,
-          type: 'info',
-          duration: 3000
+          type: isAI ? 'success' : 'info',
+          duration: 5000,
+          position: 'bottom-right'
         })
         
       } catch (e) {

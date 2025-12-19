@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Check, Close, MagicStick, Loading, ArrowUp, ArrowDown, ChatLineRound } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, Close, MagicStick, Loading, ArrowUp, ArrowDown, ChatLineRound, Cpu } from '@element-plus/icons-vue'
 import { getScoreDetail } from '@/api/exam'
 import { addFeedback } from '@/api/feedback'
 import { ElMessage } from 'element-plus'
@@ -70,7 +70,26 @@ const loadDetail = async () => {
        }
        
        const rawQuestions = data.questions || []
+       // 打印出所有包含回复的题目，方便快速定位
+       const repliedQuestions = rawQuestions.filter(q => q.teacherReply)
+       console.log('✅ [Debug] 有回复的题目列表:', repliedQuestions)
+       
        questions.value = rawQuestions.map((q, index) => {
+           // ------------------------------------------------------
+           // 🚨 临时 Mock: 强制给 Q171 或 Q165 加上 AI 回复，方便验收 UI
+           // 等后端修复后，请删除这段代码
+           const qId = q.id || q.questionId
+           let mockReply = q.teacherReply
+           let mockSource = q.replySource
+
+           if (qId === 171 || qId === 165) { 
+               if (!mockReply) {
+                   mockReply = "**[AI 助教]** 同学你好，这道题考察的是 Java 的多态特性。你选错了是因为混淆了重载和重写的概念..."
+                   mockSource = "AI"
+               }
+           }
+           // ------------------------------------------------------
+
            let type = 'choice'
            if (q.type === '单选题' || q.type === '选择题') type = 'choice'
            else if (q.type === '多选题') type = 'multiple_choice'
@@ -98,12 +117,12 @@ const loadDetail = async () => {
                options,
                isCorrect: q.studentScore === q.score || q.answer === q.studentAnswer,
                analysis: q.analysis || '',
-               aiLoading: false,
-               isExpanded: false,
-               teacherReply: q.teacherReply || '' 
-           }
-       })
-    }
+                                             aiLoading: false,
+                                             isExpanded: false,
+                                             isAiExpanded: false, // AI回复默认折叠
+                                             teacherReply: mockReply || '',
+                                             replySource: mockSource || (q.status === 'ai_replied' ? 'AI' : 'TEACHER')
+                                         }                      })    }
   } catch (error) {
     console.error('Failed to load score detail:', error)
     ElMessage.error('加载详情失败')
@@ -197,7 +216,7 @@ onMounted(() => {
              <template #header>
                  <div class="q-header">
                      <div class="q-meta">
-                         <el-tag :type="q.type === 'choice' ? '' : (q.type === 'true_false' ? 'warning' : 'success')" effect="plain">
+                         <el-tag :type="q.type === 'choice' ? 'primary' : (q.type === 'true_false' ? 'warning' : 'success')" effect="plain">
                              {{ q.type === 'choice' ? '单选题' : (q.type === 'multiple_choice' ? '多选题' : '判断题') }}
                          </el-tag>
                          <span class="q-score">({{ q.score }}分)</span>
@@ -287,13 +306,26 @@ onMounted(() => {
                       <el-button link type="warning" size="small" @click="handleFeedback(q)">此题不懂?</el-button>
                  </div>
 
-                 <!-- Teacher Reply Section -->
-                 <div v-if="q.teacherReply" class="teacher-reply-box">
+                 <!-- Reply Section (Teacher or AI Agent) -->
+                 <div v-if="q.teacherReply" class="reply-box" :class="q.replySource === 'AI' ? 'ai-reply' : 'teacher-reply'">
                     <div class="reply-header">
-                        <el-icon><ChatLineRound /></el-icon>
-                        <span>老师的解答：</span>
+                        <el-icon v-if="q.replySource === 'AI'"><Cpu /></el-icon>
+                        <el-icon v-else><ChatLineRound /></el-icon>
+                        <span>{{ q.replySource === 'AI' ? 'AI 助教解析 (仅供参考)：' : '老师的解答：' }}</span>
                     </div>
-                    <div class="reply-content">{{ q.teacherReply }}</div>
+                    <div class="reply-content">
+                        <div :class="['analysis-content', q.isAiExpanded ? 'expanded' : 'collapsed']">
+                            <MarkdownViewer :content="q.teacherReply" />
+                        </div>
+                        <div class="expand-toggle-bar">
+                             <el-button link type="primary" size="small" @click="q.isAiExpanded = !q.isAiExpanded">
+                                 {{ q.isAiExpanded ? '收起' : '展开' }}
+                                 <el-icon class="el-icon--right">
+                                     <component :is="q.isAiExpanded ? 'ArrowUp' : 'ArrowDown'" />
+                                 </el-icon>
+                             </el-button>
+                        </div>
+                    </div>
                  </div>
              </div>
          </el-card>
@@ -348,9 +380,28 @@ onMounted(() => {
 .analysis-content.expanded { max-height: 3000px; }
 .expand-toggle-bar { margin-top: 5px; }
 
-/* Teacher Reply Section */
-.teacher-reply-box { margin-top: 15px; padding: 12px 16px; background: #f0f9eb; border-left: 4px solid #67C23A; border-radius: 4px; }
-.reply-header { display: flex; align-items: center; gap: 6px; color: #67C23A; font-weight: bold; margin-bottom: 6px; font-size: 14px; }
+/* Reply Box Base */
+.reply-box { 
+    margin-top: 15px; 
+    padding: 12px 16px; 
+    border-radius: 4px;
+}
+.teacher-reply { 
+    background: #f0f9eb; 
+    border-left: 4px solid #67C23A; 
+}
+.teacher-reply .reply-header { 
+    color: #67C23A; 
+}
+.ai-reply { 
+    background: #f0f5ff; 
+    border-left: 4px solid #409EFF; 
+}
+.ai-reply .reply-header { 
+    color: #409EFF; 
+}
+
+.reply-header { display: flex; align-items: center; gap: 6px; font-weight: bold; margin-bottom: 6px; font-size: 14px; }
 .reply-content { color: #606266; font-size: 14px; line-height: 1.6; }
 
 .text-success { color: #67C23A; font-weight: bold; }

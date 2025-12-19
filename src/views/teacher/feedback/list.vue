@@ -52,7 +52,8 @@ const handleReset = () => {
 
 const handleReply = (row) => {
   currentFeedback.value = row
-  replyContent.value = ''
+  // 如果是 AI 回复的，带出 AI 的内容供老师修改
+  replyContent.value = row.status === 'ai_replied' ? (row.reply || '') : ''
   dialogVisible.value = true
 }
 
@@ -118,7 +119,10 @@ onMounted(() => {
         <el-table-column prop="createTime" label="提交时间" width="160" sortable />
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
-            <el-tag :type="scope.row.status === 'pending' ? 'warning' : 'success'">
+            <el-tag v-if="scope.row.status === 'ai_replied'" type="primary" effect="light">
+              AI 已回
+            </el-tag>
+            <el-tag v-else :type="scope.row.status === 'pending' ? 'warning' : 'success'">
               {{ scope.row.status === 'pending' ? '待回复' : '已回复' }}
             </el-tag>
           </template>
@@ -126,13 +130,13 @@ onMounted(() => {
         <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="scope">
             <el-button 
-              v-if="scope.row.status === 'pending'" 
+              v-if="scope.row.status === 'pending' || scope.row.status === 'ai_replied'" 
               link 
               type="primary" 
               :icon="ChatDotRound" 
               @click="handleReply(scope.row)"
             >
-              回复
+              {{ scope.row.status === 'ai_replied' ? '修正回复' : '回复' }}
             </el-button>
             <el-button 
               v-else 
