@@ -1,12 +1,19 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
+import ForceGraph3D from '3d-force-graph'
+import SpriteText from 'three-spritetext' // Import it
 import { getKnowledgeAnalysis } from '@/api/knowledge'
 import { ElMessage, ElLoading } from 'element-plus'
+import { Connection, Switch } from '@element-plus/icons-vue' // Add Switch icon
 
 const chartRef = ref(null)
+const graph3dRef = ref(null) // 3D 容器 Ref
 let chartInstance = null
+let graph3dInstance = null // 3D 实例
 const loading = ref(false)
+const is3DMode = ref(false) // 切换开关
+const rawData = ref(null) // 保存原始数据供两种模式使用
 
 // 统一颜色定义
 const COLORS = {
@@ -47,6 +54,76 @@ const processData = (node) => {
     if (node.children && node.children.length > 0) {
         node.children.forEach(child => processData(child))
     }
+}
+
+// 转换树形数据为图数据 (for 3D)
+const flattenTree = (node, parentId = null, nodes = [], links = []) => {
+    if (!node) return { nodes, links }
+    
+    // 构造唯一 ID
+    const id = node.id || node.name + Math.random()
+    
+    // 添加节点
+    nodes.push({
+        id: id,
+        name: node.name,
+        val: node.value || 50, // 大小
+        color: node.itemStyle?.color || COLORS.default, // 沿用 2D 计算好的颜色
+        desc: `掌握度: ${node.value || 0}%`
+    })
+    
+    // 添加连线
+    if (parentId) {
+        links.push({
+            source: parentId,
+            target: id
+        })
+    }
+    
+    // 递归
+    if (node.children) {
+        node.children.forEach(child => flattenTree(child, id, nodes, links))
+    }
+    return { nodes, links }
+}
+
+const init3DGraph = () => {
+    if (!graph3dRef.value || !rawData.value) return
+    
+    const { nodes, links } = flattenTree(rawData.value)
+    
+    // 销毁旧实例（防止重复渲染）
+    if (graph3dRef.value.innerHTML) graph3dRef.value.innerHTML = ''
+
+    graph3dInstance = ForceGraph3D()(graph3dRef.value)
+        .graphData({ nodes, links })
+        .nodeLabel('desc') 
+        .nodeColor(node => node.color)
+        .nodeResolution(16)
+        .nodeVal(node => Math.max(node.val / 5, 3))
+        .nodeThreeObjectExtend(true)
+        .nodeThreeObject(node => {
+            const sprite = new SpriteText(node.name)
+            // 亮色模式下，文字颜色加深处理
+            sprite.color = node.color === COLORS.yellow ? '#D48806' : node.color
+            sprite.textHeight = 5
+            sprite.position.y = 10
+            return sprite
+        })
+        .linkWidth(1)
+        .linkColor(() => '#99999966') // 亮色背景下使用深灰色线条
+        .linkDirectionalParticles(2)
+        .linkDirectionalParticleWidth(1.5)
+        .linkDirectionalParticleColor(() => '#409EFF') // 使用品牌蓝粒子
+        .backgroundColor('#f5f7fa') // 改为淡灰色背景
+        .showNavInfo(false)
+        
+    // 移除之前的黑色渐变背景
+    graph3dRef.value.style.background = '#f5f7fa'
+
+    // 自适应窗口
+    graph3dInstance.width(graph3dRef.value.clientWidth)
+    graph3dInstance.height(600)
 }
 
 // 加载数据并渲染
@@ -115,6 +192,7 @@ const initChart = async () => {
         
         // CRITICAL STEP: Process data to inject colors
         processData(data)
+        rawData.value = data
 
         chartInstance = echarts.init(chartRef.value)
         
@@ -125,7 +203,7 @@ const initChart = async () => {
                 formatter: function (params) {
                     const val = params.data.value !== undefined ? params.data.value : '-'
                     const total = params.data.totalQuestions || 0
-                    const color = params.data.itemStyle?.color || COLORS.default // Use injected color
+                    const color = params.data.itemStyle?.color || COLORS.default
                     
                     return `
                         <div style="text-align: left;">
@@ -166,7 +244,6 @@ const initChart = async () => {
                     expandAndCollapse: true,
                     animationDuration: 550,
                     animationDurationUpdate: 750
-                    // Remove itemStyle callback since we injected it directly into data
                 }
             ]
         }
@@ -181,8 +258,25 @@ const initChart = async () => {
     }
 }
 
+const toggleMode = () => {
+    is3DMode.value = !is3DMode.value
+    if (is3DMode.value) {
+        nextTick(() => {
+            init3DGraph()
+        })
+    } else {
+        // 切回 2D 时可能需要 resize
+        nextTick(() => {
+            chartInstance && chartInstance.resize()
+        })
+    }
+}
+
 const handleResize = () => {
     chartInstance && chartInstance.resize()
+    if (graph3dInstance && graph3dRef.value) {
+        graph3dInstance.width(graph3dRef.value.clientWidth)
+    }
 }
 
 onMounted(() => {
@@ -204,11 +298,21 @@ onUnmounted(() => {
             <template #header>
                 <div class="card-header">
                     <span><el-icon><Connection /></el-icon> 个人知识图谱</span>
-                    <el-tag type="info">基于您的做题历史自动生成</el-tag>
+                    <div>
+                        <el-button 
+                            :type="is3DMode ? 'primary' : 'default'" 
+                            size="small" 
+                            :icon="Switch"
+                            @click="toggleMode"
+                        >
+                            {{ is3DMode ? '返回 2D 视图' : '进入 3D 宇宙' }}
+                        </el-button>
+                    </div>
                 </div>
             </template>
             <div class="graph-container">
-                <div ref="chartRef" style="width: 100%; height: 600px;"></div>
+                <div v-show="!is3DMode" ref="chartRef" style="width: 100%; height: 600px;"></div>
+                <div v-if="is3DMode" ref="graph3dRef" style="width: 100%; height: 600px;"></div>
             </div>
             <div class="legend">
                 <span class="dot green"></span> 熟练 (80-100%)

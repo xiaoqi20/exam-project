@@ -42,3 +42,11 @@ export function importQuestions(formData) {
     }
   })
 }
+
+// AI 批量自动打标
+export function autoTagQuestions() {
+  return request({
+    url: '/question/auto-tag',
+    method: 'post'
+  })
+}

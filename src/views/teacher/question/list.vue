@@ -1,8 +1,8 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue'
-import { Search, Plus, Edit, Delete, Refresh, Upload, More } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Upload, MagicStick, More } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getQuestionList, addQuestion, updateQuestion, deleteQuestion, importQuestions } from '@/api/question'
+import { getQuestionList, addQuestion, updateQuestion, deleteQuestion, importQuestions, autoTagQuestions } from '@/api/question'
 import { getKnowledgeTree } from '@/api/knowledge'
 
 const tableData = ref([])
@@ -10,6 +10,7 @@ const total = ref(0)
 const loading = ref(false)
 const fileInputRef = ref(null)
 const isImporting = ref(false)
+const autoTagLoading = ref(false)
 const knowledgeOptions = ref([])
 
 const queryParams = reactive({
@@ -69,9 +70,6 @@ const loadData = async () => {
     if (res && res.records) {
         tableData.value = res.records
         total.value = res.total
-    } else {
-        tableData.value = []
-        total.value = 0
     }
   } catch (error) {
     console.error('Failed to load questions:', error)
@@ -85,11 +83,36 @@ const handleQuery = () => {
   queryParams.page = 1
   loadData()
 }
-
 const handleReset = () => {
   queryParams.content = ''
   queryParams.type = ''
   handleQuery()
+}
+
+const handleAutoTag = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要对所有未打标的试题进行 AI 自动关联知识点吗？这可能需要一些时间。',
+      '提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    )
+    
+    autoTagLoading.value = true
+    await autoTagQuestions()
+    ElMessage.success('AI 自动打标任务启动成功，后台正在处理中')
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Auto tag error:', error)
+      ElMessage.error('自动打标请求失败')
+    }
+  } finally {
+    autoTagLoading.value = false
+  }
 }
 
 const handlePageChange = (page) => {
@@ -297,6 +320,15 @@ onMounted(() => {
         <el-form-item class="action-btns">
           <el-button type="primary" :icon="Search" @click="handleQuery">搜索</el-button>
           <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+          <el-button 
+            type="warning" 
+            plain 
+            :icon="MagicStick" 
+            :loading="autoTagLoading"
+            @click="handleAutoTag"
+          >
+            AI 批量自动打标
+          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
