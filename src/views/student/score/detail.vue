@@ -6,7 +6,9 @@ import { getScoreDetail } from '@/api/exam'
 import { addFeedback } from '@/api/feedback'
 import { ElMessage } from 'element-plus'
 import MarkdownViewer from '@/components/MarkdownViewer.vue'
+import QuestionCommentDrawer from '@/components/QuestionCommentDrawer.vue'
 import { useUserStore } from '@/stores/user'
+import { ChatLineSquare } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +17,14 @@ const userStore = useUserStore()
 const loading = ref(false)
 const paperInfo = ref({})
 const questions = ref([])
+const commentDrawerRef = ref(null)
+
+// Open Comment Drawer
+const handleOpenComments = (q) => {
+    if (commentDrawerRef.value) {
+        commentDrawerRef.value.open(q.id || q.questionId)
+    }
+}
 
 // Feedback Dialog State
 const feedbackDialogVisible = ref(false)
@@ -327,9 +337,19 @@ onMounted(() => {
                         </div>
                     </div>
                  </div>
+
+                 <!-- 底部操作栏 -->
+                 <div class="card-footer-actions">
+                     <el-button type="primary" link :icon="ChatLineSquare" @click="handleOpenComments(q)">
+                         查看讨论区
+                     </el-button>
+                 </div>
              </div>
          </el-card>
     </div>
+    
+    <!-- 全局评论抽屉 -->
+    <QuestionCommentDrawer ref="commentDrawerRef" />
     
     <!-- Feedback Dialog -->
     <el-dialog v-model="feedbackDialogVisible" title="提交疑问" width="500px">
@@ -403,6 +423,13 @@ onMounted(() => {
 
 .reply-header { display: flex; align-items: center; gap: 6px; font-weight: bold; margin-bottom: 6px; font-size: 14px; }
 .reply-content { color: #606266; font-size: 14px; line-height: 1.6; }
+
+.card-footer-actions {
+    margin-top: 15px;
+    border-top: 1px dashed #ebeef5;
+    padding-top: 10px;
+    text-align: right;
+}
 
 .text-success { color: #67C23A; font-weight: bold; }
 .text-danger { color: #F56C6C; font-weight: bold; }

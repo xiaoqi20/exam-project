@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useUserStore } from './user'
+import { useTrainingStore } from './training'
 import { ElNotification } from 'element-plus'
 
 export const useNotifyStore = defineStore('notify', () => {
   const userStore = useUserStore()
+  const trainingStore = useTrainingStore()
   
   // 状态 State
   const socket = ref(null)
@@ -12,7 +14,6 @@ export const useNotifyStore = defineStore('notify', () => {
   const messages = ref([]) // 存储消息列表
   
   // 计算属性 Getters
-  // 计算未读消息数量 (这里简单处理：只要在列表中就是未读，或者你可以给消息加 read 字段)
   const unreadCount = computed(() => messages.value.length)
 
   // 动作 Actions
@@ -42,8 +43,25 @@ export const useNotifyStore = defineStore('notify', () => {
         // 添加到列表头部
         messages.value.unshift(msg)
         
-        // 弹窗提示 (右上角浮窗)
+        // 1. 处理每日特训推送
+        if (msg.type === 'daily_train') {
+          ElNotification({
+            title: msg.title || '每日特训已生成',
+            message: msg.content || '为您定制了今日强化练习，快来挑战吧！',
+            type: 'success',
+            duration: 0, // 不自动关闭
+            position: 'bottom-right',
+            onClick: () => {
+                trainingStore.openTraining()
+            }
+          })
+          return // 跳过普通通知逻辑
+        }
+
+        // 2. 处理 AI 助教通知
         const isAI = msg.source === 'AI' || msg.type === 'ai_reply'
+        
+        // 弹窗提示 (右上角浮窗)
         ElNotification({
           title: isAI ? 'AI 助教提醒' : (msg.title || '新消息'),
           message: msg.content,
@@ -96,6 +114,6 @@ export const useNotifyStore = defineStore('notify', () => {
     connect,
     disconnect,
     clearMessages,
-    mockReceive // 导出这个方便测试
+    mockReceive
   }
 })

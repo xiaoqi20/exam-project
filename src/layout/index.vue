@@ -1,6 +1,7 @@
 <script setup>
 import Sidebar from './components/Sidebar.vue'
 import Navbar from './components/Navbar.vue'
+import DailyTrainingModal from '@/components/DailyTrainingModal.vue'
 import { ref, onMounted, onUnmounted, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useNotifyStore } from '@/stores/notify'
@@ -77,6 +78,9 @@ onBeforeUnmount(() => {
         <router-view />
       </el-main>
     </el-container>
+    
+    <!-- 全局每日特训弹窗 -->
+    <DailyTrainingModal />
   </el-container>
 </template>
 

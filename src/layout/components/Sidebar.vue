@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useMenuStore } from '@/stores/menu'
-import * as Icons from '@element-plus/icons-vue' // 引入所有图标以支持动态渲染
+import { useTrainingStore } from '@/stores/training'
+import * as Icons from '@element-plus/icons-vue' 
 
 const props = defineProps({
   isCollapse: {
@@ -17,6 +18,7 @@ const emit = defineEmits(['menu-click'])
 const route = useRoute()
 const userStore = useUserStore()
 const menuStore = useMenuStore()
+const trainingStore = useTrainingStore()
 
 const activeMenu = computed(() => route.path)
 
@@ -30,11 +32,12 @@ const currentMenus = computed(() => {
 })
 
 // 动态获取图标组件
-// 如果 item.icon 是字符串 "User"，则返回 Icons["User"] 组件对象
 const getIcon = (name) => {
   if (!name) return null
   return Icons[name]
 }
+
+console.log('Sidebar loaded, User Role:', userStore.role)
 </script>
 
 <template>
@@ -44,6 +47,12 @@ const getIcon = (name) => {
       <span v-show="!isCollapse" class="system-name">在线考试系统</span>
     </div>
     <el-scrollbar>
+      <!-- 每日特训快捷入口 (独立按钮，避免 router 冲突) -->
+      <div v-if="userStore.role === 'student' || userStore.role === 3" class="special-menu-item" @click="trainingStore.openTraining">
+          <el-icon><Icons.Star /></el-icon>
+          <span v-show="!isCollapse">每日特训 🌟</span>
+      </div>
+
       <el-menu
         :default-active="activeMenu"
         class="el-menu-vertical"
@@ -128,5 +137,31 @@ const getIcon = (name) => {
   font-weight: 600;
   font-size: 16px;
   white-space: nowrap;
+}
+
+.special-menu-item {
+  height: 56px;
+  line-height: 56px;
+  font-size: 14px;
+  color: #bfcbd9;
+  padding: 0 20px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color .3s, background-color .3s, color .3s;
+  box-sizing: border-box;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+.special-menu-item:hover {
+  background-color: #263445;
+  color: #409EFF;
+}
+.special-menu-item .el-icon {
+  margin-right: 5px;
+  width: 24px;
+  text-align: center;
+  font-size: 18px;
+  vertical-align: middle;
 }
 </style>
