@@ -12,7 +12,7 @@ const examList = ref([])
 const total = ref(0)
 const queryParams = reactive({
     page: 1,
-    size: 20, // Increase size since we do client-side filtering
+    size: 100, // Load enough items at once for client-side filtering
     title: ''
 })
 
@@ -57,7 +57,13 @@ const loadExams = async () => {
             // 前端过滤逻辑:
             // 1. 状态 = 1 (进行中): 保留
             // 2. 状态 = 2 (已结束): 仅保留结束时间在 24 小时内的
+            // 3. 关键词过滤 (兜底，防止后端不支持模糊查询)
             const filteredList = rawList.filter(item => {
+                // Title Match
+                if (queryParams.title && !item.title.toLowerCase().includes(queryParams.title.toLowerCase())) {
+                    return false
+                }
+
                 if (item.status === 1) return true
                 if (item.status === 2) {
                     // 使用 updateTime 作为结束时间，如果为空则兜底使用 createTime
@@ -86,6 +92,7 @@ const loadExams = async () => {
 // ...
 const handleSearch = () => {
     queryParams.page = 1
+    queryParams.title = searchQuery.value // Sync search input to query params
     loadExams()
 }
 
@@ -194,16 +201,8 @@ onMounted(() => {
           </el-col>
         </el-row>
         
-        <div class="pagination-bar" v-if="total > 0 && false">
-             <!-- Hide pagination for now as we use client-side filtering on a single large page fetch -->
-             <el-pagination 
-               layout="prev, pager, next" 
-               :total="total" 
-               v-model:current-page="queryParams.page" 
-               :page-size="queryParams.size"
-               @current-change="loadExams"
-               background
-             />
+        <div v-if="examList.length > 0 && examList.length >= 100" style="text-align: center; color: #909399; margin-top: 20px; font-size: 13px;">
+            仅展示最近发布的 100 场考试，请使用搜索查找更多
         </div>
     </div>
   </div>

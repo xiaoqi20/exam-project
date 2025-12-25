@@ -139,38 +139,68 @@ const handleDelete = (row) => {
       <el-alert title="注意：修改菜单后侧边栏会实时更新。" type="info" show-icon :closable="false" style="margin-left: 20px; display: inline-flex; width: auto;" />
     </div>
 
-    <!-- 菜单表格 -->
-    <el-table
-      :data="tableData"
-      style="width: 100%; margin-top: 20px;"
-      row-key="id"
-      border
-      default-expand-all
-      :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
-    >
-      <el-table-column prop="title" label="菜单名称" width="200" />
-      
-      <el-table-column label="图标" width="80" align="center">
-        <template #default="scope">
-          <el-icon v-if="scope.row.icon && getIcon(scope.row.icon)" :size="18">
-            <component :is="getIcon(scope.row.icon)" />
-          </el-icon>
-        </template>
-      </el-table-column>
-      
-      <el-table-column prop="path" label="路由路径" min-width="200" />
-      
-      <el-table-column label="操作" width="250" align="center">
-        <template #default="scope">
-          <el-button link type="primary" :icon="Plus" @click="handleAdd(scope.row.id)">新增子项</el-button>
-          <el-button link type="primary" :icon="Edit" @click="handleEdit(scope.row)">编辑</el-button>
-          <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <!-- 菜单表格 (PC端) -->
+    <div class="hidden-mobile">
+        <el-table
+          :data="tableData"
+          style="width: 100%; margin-top: 20px;"
+          row-key="id"
+          border
+          default-expand-all
+          :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
+        >
+          <el-table-column prop="title" label="菜单名称" width="200" />
+          
+          <el-table-column label="图标" width="80" align="center">
+            <template #default="scope">
+              <el-icon v-if="scope.row.icon && getIcon(scope.row.icon)" :size="18">
+                <component :is="getIcon(scope.row.icon)" />
+              </el-icon>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="path" label="路由路径" min-width="200" />
+          
+          <el-table-column label="操作" width="250" align="center">
+            <template #default="scope">
+              <el-button link type="primary" :icon="Plus" @click="handleAdd(scope.row.id)">新增子项</el-button>
+              <el-button link type="primary" :icon="Edit" @click="handleEdit(scope.row)">编辑</el-button>
+              <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+    </div>
+
+    <!-- 菜单树 (移动端) -->
+    <div class="visible-mobile">
+        <el-tree
+            :data="tableData"
+            node-key="id"
+            default-expand-all
+            :props="{ label: 'title', children: 'children' }"
+            class="mobile-tree"
+        >
+            <template #default="{ node, data }">
+                <div class="custom-tree-node">
+                    <span class="node-label">
+                        <el-icon v-if="data.icon" class="icon">
+                            <component :is="getIcon(data.icon)" />
+                        </el-icon>
+                        {{ node.label }}
+                    </span>
+                    <span class="node-actions">
+                        <el-button link type="primary" :icon="Plus" @click.stop="handleAdd(data.id)" />
+                        <el-button link type="primary" :icon="Edit" @click.stop="handleEdit(data)" />
+                        <el-button link type="danger" :icon="Delete" @click.stop="handleDelete(data)" />
+                    </span>
+                </div>
+            </template>
+        </el-tree>
+        <el-empty v-if="!tableData || tableData.length === 0" description="暂无菜单数据" />
+    </div>
 
     <!-- 编辑/新增弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="90%" style="max-width: 500px;">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="菜单名称" prop="title">
           <el-input v-model="form.title" placeholder="例如：用户管理" />
@@ -203,5 +233,51 @@ const handleDelete = (row) => {
 
 <style scoped>
 .app-container { padding: 20px; }
-.toolbar { display: flex; align-items: center; }
+.toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+
+/* Responsive */
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+
+@media (max-width: 768px) {
+    .app-container { padding: 10px; }
+    
+    .hidden-mobile { display: none; }
+    .visible-mobile { display: block; margin-top: 15px; }
+    
+    /* Tree Node Style */
+    .mobile-tree {
+        border: 1px solid #ebeef5;
+        border-radius: 4px;
+    }
+    .custom-tree-node {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 14px;
+        padding-right: 8px;
+        width: 100%; /* Ensure flex items take space */
+        overflow: hidden; 
+    }
+    .node-label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+    }
+    .node-actions {
+        flex-shrink: 0;
+        display: flex;
+        gap: 0; /* Tight spacing for buttons */
+    }
+    /* Increase tap target for buttons */
+    .node-actions .el-button {
+        padding: 5px; 
+        margin-left: 2px;
+    }
+}
 </style>

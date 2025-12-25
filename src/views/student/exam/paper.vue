@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Clock, List, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { enterExam, submitExam } from '@/api/exam'
 import { useUserStore } from '@/stores/user'
@@ -164,6 +164,8 @@ const loadPaper = async () => {
         if (q.type === '单选题') type = 'choice'
         else if (q.type === '多选题') type = 'multiple_choice'
         else if (q.type === '判断题') type = 'true_false'
+        else if (q.type === '填空题' || q.type === 'fill_blank') type = 'fill_blank'
+        else if (q.type === '简答题' || q.type === 'short_answer') type = 'short_answer'
         
         const adaptedQ = {
           id: q.qid,
@@ -203,8 +205,9 @@ const loadPaper = async () => {
 }
 
 const submitLogic = async () => {
-  // Practice Mode
+  // ... Practice Mode logic remains same ...
   if (examInfo.id === 'practice') {
+      // ... (keep practice logic)
       let score = 0
       let totalScore = 0
       paperData.value.forEach(q => {
@@ -226,9 +229,16 @@ const submitLogic = async () => {
       return
   }
 
-  loading.value = true
+  // 开启全屏加载
+  const loadingInstance = ElLoading.service({
+    lock: true,
+    text: '正在提交试卷，并同步调用 AI 阅卷中，请稍候...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+
   try {
     const formattedAnswers = []
+    // ... rest of the formatting logic ...
     for (const [qId, val] of Object.entries(answers)) {
       let studentAnswer = ''
       if (Array.isArray(val)) {
@@ -264,9 +274,13 @@ const submitLogic = async () => {
     localStorage.removeItem(storageKey.value)
     localStorage.removeItem(startTimeKey.value)
     
+    // 关闭加载
+    loadingInstance.close()
+
     ElMessage.success('试卷提交成功！')
     router.replace('/dashboard/student/exam/hall') 
   } catch (error) {
+    loadingInstance.close()
     ElMessage.error('提交失败，请重试')
   } finally {
     loading.value = false
@@ -408,6 +422,23 @@ onBeforeUnmount(() => {
                   <el-radio label="A" size="large" border>正确</el-radio>
                   <el-radio label="B" size="large" border>错误</el-radio>
                 </el-radio-group>
+
+                <!-- 填空题 -->
+                <div v-if="item.type === 'fill_blank'" class="fill-blank-area">
+                    <el-input v-model="answers[item.id]" placeholder="请输入答案" clearable />
+                </div>
+
+                <!-- 简答题 -->
+                <div v-if="item.type === 'short_answer'" class="short-answer-area">
+                    <el-input 
+                        v-model="answers[item.id]" 
+                        type="textarea" 
+                        :rows="5" 
+                        placeholder="请输入您的回答..." 
+                        maxlength="1000"
+                        show-word-limit
+                    />
+                </div>
               </div>
             </div>
         </template>
@@ -455,6 +486,23 @@ onBeforeUnmount(() => {
                   <el-radio label="A" size="large" border>正确</el-radio>
                   <el-radio label="B" size="large" border>错误</el-radio>
                 </el-radio-group>
+
+                <!-- 填空题 -->
+                <div v-if="currentQuestion.type === 'fill_blank'" class="fill-blank-area">
+                    <el-input v-model="answers[currentQuestion.id]" placeholder="请输入答案" clearable size="large" />
+                </div>
+
+                <!-- 简答题 -->
+                <div v-if="currentQuestion.type === 'short_answer'" class="short-answer-area">
+                    <el-input 
+                        v-model="answers[currentQuestion.id]" 
+                        type="textarea" 
+                        :rows="8" 
+                        placeholder="请输入您的回答..." 
+                        maxlength="1000"
+                        show-word-limit
+                    />
+                </div>
               </div>
             </div>
             <!-- Spacer for footer -->

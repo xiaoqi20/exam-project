@@ -219,32 +219,56 @@ onMounted(() => {
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增学生</el-button>
       </div>
       
-      <el-table :data="tableData" border stripe style="width: 100%" v-loading="loading">
-        <el-table-column prop="stuId" label="学号" width="150" sortable />
-        <el-table-column prop="sname" label="姓名" width="120" />
-        <el-table-column prop="sex" label="性别" width="80" align="center" />
-        <el-table-column prop="className" label="班级" width="150" sortable />
-        <el-table-column prop="phone" label="联系电话" width="150" />
-        <el-table-column label="操作" min-width="150">
-          <template #default="scope">
-            <el-button link type="primary" :icon="Edit" @click="handleEdit(scope.row)">修改</el-button>
-            <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <!-- PC View: Table -->
+      <div class="hidden-mobile">
+          <el-table :data="tableData" border stripe style="width: 100%" v-loading="loading">
+            <el-table-column prop="stuId" label="学号" width="150" sortable />
+            <el-table-column prop="sname" label="姓名" width="120" />
+            <el-table-column prop="sex" label="性别" width="80" align="center" />
+            <el-table-column prop="className" label="班级" width="150" sortable />
+            <el-table-column prop="phone" label="联系电话" width="150" />
+            <el-table-column label="操作" min-width="150">
+              <template #default="scope">
+                <el-button link type="primary" :icon="Edit" @click="handleEdit(scope.row)">修改</el-button>
+                <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+      </div>
+
+      <!-- Mobile View: Cards -->
+      <div class="visible-mobile">
+          <el-empty v-if="!loading && tableData.length === 0" description="暂无数据" />
+          <div v-for="item in tableData" :key="item.stuId || item.id" class="mobile-card">
+              <div class="card-header">
+                  <span class="name">{{ item.sname || item.name }}</span>
+                  <el-tag size="small" :type="item.sex === '男' ? '' : 'danger'">{{ item.sex }}</el-tag>
+              </div>
+              <div class="card-body">
+                  <p><strong>学号:</strong> {{ item.stuId || item.id }}</p>
+                  <p><strong>班级:</strong> {{ item.className || item.clazz }}</p>
+                  <p><strong>电话:</strong> {{ item.phone || item.tel || '-' }}</p>
+              </div>
+              <div class="card-footer">
+                  <el-button size="small" type="primary" plain @click="handleEdit(item)">修改</el-button>
+                  <el-button size="small" type="danger" plain @click="handleDelete(item)">删除</el-button>
+              </div>
+          </div>
+      </div>
 
       <div class="pagination-container" style="margin-top: 20px; text-align: right">
         <el-pagination
-          layout="total, prev, pager, next"
+          layout="prev, pager, next"
           :total="total"
           v-model:current-page="queryParams.page"
           :page-size="queryParams.size"
           @current-change="handlePageChange"
+          background
         />
       </div>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="90%" style="max-width: 500px;">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="学号" prop="stuId">
           <el-input v-model="form.stuId" placeholder="请输入学号" :disabled="dialogTitle === '修改学生信息'" />
@@ -293,5 +317,63 @@ onMounted(() => {
 
 .table-toolbar {
   margin-bottom: 15px;
+}
+
+/* Responsive Utilities */
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+
+@media (max-width: 768px) {
+    .app-container { padding: 10px; }
+    
+    .hidden-mobile { display: none; }
+    .visible-mobile { display: block; }
+    
+    /* Filter form responsiveness */
+    :deep(.el-form--inline .el-form-item) {
+        display: block;
+        margin-right: 0;
+        margin-bottom: 15px;
+    }
+    :deep(.el-form--inline .el-form-item__content),
+    :deep(.el-input) {
+        width: 100% !important;
+    }
+    
+    /* Mobile Card Style */
+    .mobile-card {
+        background: #fff;
+        border: 1px solid #ebeef5;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+    .card-header {
+        padding: 10px 15px;
+        border-bottom: 1px solid #f0f2f5;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #fafafa;
+    }
+    .card-header .name { font-weight: bold; font-size: 16px; }
+    
+    .card-body { padding: 15px; }
+    .card-body p { margin: 5px 0; font-size: 14px; color: #606266; }
+    
+    .card-footer {
+        padding: 10px 15px;
+        border-top: 1px solid #f0f2f5;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+    
+    /* Pagination adjust */
+    :deep(.el-pagination) {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
 }
 </style>

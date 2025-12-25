@@ -49,11 +49,14 @@ const rules = {
 const typeOptions = [
   { label: '单选题', value: 'choice' },
   { label: '多选题', value: 'multiple_choice' },
-  { label: '判断题', value: 'true_false' }
+  { label: '判断题', value: 'true_false' },
+  { label: '填空题', value: 'fill_blank' },
+  { label: '简答题', value: 'short_answer' }
 ]
 
 const formatOptions = (row) => {
   if (row.type === 'true_false') return '正确 / 错误'
+  if (row.type === 'fill_blank' || row.type === 'short_answer') return '（无选项）'
   try {
     const opts = typeof row.options === 'string' ? JSON.parse(row.options) : row.options
     if (!opts) return '-'
@@ -228,8 +231,11 @@ const handleSubmit = async () => {
                 finalOptions = JSON.stringify({ A: '正确', B: '错误' })
                 if (finalAnswer === 'True') finalAnswer = 'A'
                 if (finalAnswer === 'False') finalAnswer = 'B'
+            } else if (form.type === 'fill_blank' || form.type === 'short_answer') {
+                finalOptions = "{}" // 新题型无选项
             }
       
+            const optionObj = form.options.reduce((acc, cur) => ({...acc, [cur.key]: cur.value}), {})
             const saveData = {
               id: form.id,
               type: form.type,
@@ -237,7 +243,13 @@ const handleSubmit = async () => {
               score: form.score,
               answer: finalAnswer,
               options: finalOptions,
-              knowledgeIds: form.knowledgeIds
+              knowledgeIds: form.knowledgeIds,
+              // 平铺选项字段，兼容后端独立字段模式
+              optionA: optionObj['A'],
+              optionB: optionObj['B'],
+              optionC: optionObj['C'],
+              optionD: optionObj['D'],
+              optionE: optionObj['E']
             }
       try {
           if (form.id) {
@@ -347,8 +359,8 @@ onMounted(() => {
             <el-table-column prop="id" label="编号" width="80" sortable />
             <el-table-column prop="type" label="题型" width="100">
               <template #default="scope">
-                <el-tag :type="scope.row.type === 'choice' ? '' : (scope.row.type === 'multiple_choice' ? 'success' : 'warning')">
-                  {{ scope.row.type === 'choice' ? '单选题' : (scope.row.type === 'multiple_choice' ? '多选题' : '判断题') }}
+                <el-tag :type="scope.row.type === 'choice' ? '' : (scope.row.type === 'multiple_choice' ? 'success' : (scope.row.type === 'true_false' ? 'warning' : 'info'))">
+                  {{ scope.row.type === 'choice' ? '单选题' : (scope.row.type === 'multiple_choice' ? '多选题' : (scope.row.type === 'true_false' ? '判断题' : (scope.row.type === 'fill_blank' ? '填空题' : '简答题'))) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -359,7 +371,7 @@ onMounted(() => {
               </template>
             </el-table-column>
             <el-table-column prop="score" label="分值" width="80" align="center" />
-            <el-table-column prop="answer" label="答案" width="80" align="center">
+            <el-table-column prop="answer" label="答案" min-width="120" show-overflow-tooltip>
                  <template #default="scope">
                     <span v-if="scope.row.type === 'true_false'">
                         <el-tag :type="scope.row.answer === 'True' || scope.row.answer === 'A' ? 'success' : 'danger'">
@@ -382,8 +394,8 @@ onMounted(() => {
       <div class="mobile-view">
           <div v-for="item in tableData" :key="item.id" class="mobile-card">
               <div class="m-card-header">
-                  <el-tag size="small" :type="item.type === 'choice' ? '' : (item.type === 'multiple_choice' ? 'success' : 'warning')">
-                      {{ item.type === 'choice' ? '单选题' : (item.type === 'multiple_choice' ? '多选题' : '判断题') }}
+                  <el-tag size="small" :type="item.type === 'choice' ? '' : (item.type === 'multiple_choice' ? 'success' : (item.type === 'true_false' ? 'warning' : 'info'))">
+                      {{ item.type === 'choice' ? '单选题' : (item.type === 'multiple_choice' ? '多选题' : (item.type === 'true_false' ? '判断题' : (item.type === 'fill_blank' ? '填空题' : '简答题'))) }}
                   </el-tag>
                   <span class="m-score">{{ item.score }}分</span>
               </div>
@@ -423,9 +435,9 @@ onMounted(() => {
           <el-col :span="12">
             <el-form-item label="题型" prop="type">
               <el-radio-group v-model="form.type" size="small">
-                <el-radio-button label="choice">单选</el-radio-button>
-                <el-radio-button label="multiple_choice">多选</el-radio-button>
-                <el-radio-button label="true_false">判断</el-radio-button>
+                <el-radio-button v-for="item in typeOptions" :key="item.value" :label="item.value">
+                  {{ item.label.replace('题', '') }}
+                </el-radio-button>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -460,7 +472,7 @@ onMounted(() => {
           />
         </el-form-item>
 
-        <!-- 选择题/多选题选项 -->
+        <!-- 选择题/多选题选项 (Only for Choice types) -->
         <template v-if="form.type === 'choice' || form.type === 'multiple_choice'">
           <el-divider content-position="left">选项设置</el-divider>
           <el-form-item 
@@ -488,12 +500,21 @@ onMounted(() => {
           </el-form-item>
         </template>
 
-        <!-- 判断题答案 -->
+        <!-- 判断题/填空题/简答题 答案 -->
         <el-form-item v-if="form.type === 'true_false'" label="正确答案" prop="answer">
            <el-radio-group v-model="form.answer">
              <el-radio label="True">正确</el-radio>
              <el-radio label="False">错误</el-radio>
            </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="form.type === 'fill_blank' || form.type === 'short_answer'" label="标准答案" prop="answer">
+           <el-input 
+             v-model="form.answer" 
+             :type="form.type === 'short_answer' ? 'textarea' : 'text'"
+             :rows="4"
+             placeholder="请输入标准答案" 
+           />
         </el-form-item>
 
       </el-form>
@@ -573,6 +594,12 @@ onMounted(() => {
         padding: 8px;
         border-radius: 4px;
         margin-bottom: 10px;
+        /* 限制长答案显示 */
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .ans-val { color: #67C23A; font-weight: bold; }
     

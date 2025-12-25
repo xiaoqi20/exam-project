@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Check, Close, MagicStick, Loading, ArrowUp, ArrowDown, ChatLineRound, Cpu } from '@element-plus/icons-vue'
 import { getScoreDetail } from '@/api/exam'
@@ -38,6 +38,10 @@ const handleFeedback = (q) => {
     currentFeedbackQ.value = q
     feedbackContent.value = ''
     feedbackDialogVisible.value = true
+    
+    // 更新 URL，方便刷新后定位
+    const qId = q.id || q.questionId
+    router.replace({ query: { ...route.query, q: qId } })
 }
 
 // Submit Feedback
@@ -85,25 +89,12 @@ const loadDetail = async () => {
        console.log('✅ [Debug] 有回复的题目列表:', repliedQuestions)
        
        questions.value = rawQuestions.map((q, index) => {
-           // ------------------------------------------------------
-           // 🚨 临时 Mock: 强制给 Q171 或 Q165 加上 AI 回复，方便验收 UI
-           // 等后端修复后，请删除这段代码
-           const qId = q.id || q.questionId
-           let mockReply = q.teacherReply
-           let mockSource = q.replySource
-
-           if (qId === 171 || qId === 165) { 
-               if (!mockReply) {
-                   mockReply = "**[AI 助教]** 同学你好，这道题考察的是 Java 的多态特性。你选错了是因为混淆了重载和重写的概念..."
-                   mockSource = "AI"
-               }
-           }
-           // ------------------------------------------------------
-
            let type = 'choice'
            if (q.type === '单选题' || q.type === '选择题') type = 'choice'
            else if (q.type === '多选题') type = 'multiple_choice'
            else if (q.type === '判断题') type = 'true_false'
+           else if (q.type === '填空题' || q.type === 'fill_blank') type = 'fill_blank'
+           else if (q.type === '简答题' || q.type === 'short_answer') type = 'short_answer'
 
            const options = {}
            if (type === 'choice' || type === 'multiple_choice') {
@@ -127,12 +118,27 @@ const loadDetail = async () => {
                options,
                isCorrect: q.studentScore === q.score || q.answer === q.studentAnswer,
                analysis: q.analysis || '',
-                                             aiLoading: false,
-                                             isExpanded: false,
-                                             isAiExpanded: false, // AI回复默认折叠
-                                             teacherReply: mockReply || '',
-                                             replySource: mockSource || (q.status === 'ai_replied' ? 'AI' : 'TEACHER')
-                                         }                      })    }
+                                                            aiLoading: false,
+                                                            isExpanded: false,
+                                                            isAiExpanded: false, // AI回复默认折叠
+                                                            teacherReply: q.teacherReply || '',
+                                                            replySource: q.replySource || (q.status === 'ai_replied' ? 'AI' : 'TEACHER')
+                                                        }
+                                                    })
+
+       // 自动滚动到指定题目 (如果 URL 有 ?q=questionId)
+       const targetQId = route.query.q
+       if (targetQId) {
+           nextTick(() => {
+               const el = document.getElementById('question-' + targetQId)
+               if (el) {
+                   el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                   // 可选：高亮一下该题目
+                   el.classList.add('highlight-flash')
+               }
+           })
+       }
+    }
   } catch (error) {
     console.error('Failed to load score detail:', error)
     ElMessage.error('加载详情失败')
@@ -222,55 +228,61 @@ onMounted(() => {
     </div>
 
     <div class="content-body">
-         <el-card v-for="(q, index) in questions" :key="index" class="question-card" shadow="hover">
+         <el-card 
+            v-for="(q, index) in questions" 
+            :key="index" 
+            :id="'question-' + (q.id || q.questionId)"
+            class="question-card" 
+            shadow="hover"
+         >
              <template #header>
                  <div class="q-header">
                      <div class="q-meta">
-                         <el-tag :type="q.type === 'choice' ? 'primary' : (q.type === 'true_false' ? 'warning' : 'success')" effect="plain">
-                             {{ q.type === 'choice' ? '单选题' : (q.type === 'multiple_choice' ? '多选题' : '判断题') }}
+                         <el-tag :type="q.type === 'choice' ? 'primary' : (q.type === 'multiple_choice' ? 'success' : (q.type === 'true_false' ? 'warning' : 'info'))" effect="plain">
+                             {{ q.type === 'choice' ? '单选题' : (q.type === 'multiple_choice' ? '多选题' : (q.type === 'true_false' ? '判断题' : (q.type === 'fill_blank' ? '填空题' : '简答题'))) }}
                          </el-tag>
                          <span class="q-score">({{ q.score }}分)</span>
                      </div>
                      <span class="q-content">{{ index + 1 }}. {{ q.content }}</span>
                      
                      <div class="q-status">
-                         <el-tag v-if="q.isCorrect" type="success" effect="dark" class="status-tag"><el-icon><Check /></el-icon> 正确</el-tag>
+                         <!-- 简答题特殊评分展示 -->
+                         <el-tag v-if="q.type === 'short_answer'" type="info" effect="dark" class="status-tag">
+                            AI 评分：{{ q.studentScore }} / {{ q.score }} 分
+                         </el-tag>
+                         <el-tag v-else-if="q.isCorrect" type="success" effect="dark" class="status-tag"><el-icon><Check /></el-icon> 正确</el-tag>
                          <el-tag v-else type="danger" effect="dark" class="status-tag"><el-icon><Close /></el-icon> 错误</el-tag>
                      </div>
                  </div>
              </template>
              
-             <!-- Options Area -->
-             <div class="options-list">
+             <!-- Options Area (Only for choice types) -->
+             <div class="options-list" v-if="q.type === 'choice' || q.type === 'multiple_choice' || q.type === 'true_false'">
                  <template v-if="q.type === 'choice' || q.type === 'multiple_choice'">
-                     <div v-for="(val, key) in q.options" :key="key" class="option-item" :class="getOptionClass(q, key)">
-                         <span class="opt-label">{{ key }}.</span>
-                         <span class="opt-text">{{ val }}</span>
-                         <el-icon v-if="(q.answer || q.correctAnswer || '').includes(key)" class="icon-indicator success"><Check /></el-icon>
-                         <el-icon v-if="(q.studentAnswer || '').includes(key) && !(q.answer || q.correctAnswer || '').includes(key)" class="icon-indicator danger"><Close /></el-icon>
-                     </div>
-                 </template>
-                 
-                 <template v-if="q.type === 'true_false'">
-                      <div class="option-item" :class="getOptionClass(q, 'A')">
-                          <span class="opt-label">A.</span><span class="opt-text">正确</span>
-                          <el-icon v-if="(q.answer || q.correctAnswer || '') === 'A'" class="icon-indicator success"><Check /></el-icon>
-                      </div>
-                      <div class="option-item" :class="getOptionClass(q, 'B')">
-                          <span class="opt-label">B.</span><span class="opt-text">错误</span>
-                          <el-icon v-if="(q.answer || q.correctAnswer || '') === 'B'" class="icon-indicator success"><Check /></el-icon>
-                      </div>
+// ... (skip)
                  </template>
              </div>
              
              <div class="analysis-box">
                  <div class="analysis-row">
                     <span class="label">我的答案：</span>
-                    <span class="value" :class="q.isCorrect ? 'text-success' : 'text-danger'">{{ q.studentAnswer || '未作答' }}</span>
+                    <div class="value" :class="q.type !== 'short_answer' ? (q.isCorrect ? 'text-success' : 'text-danger') : ''">
+                        <template v-if="q.type === 'short_answer' || q.type === 'fill_blank'">
+                            {{ q.studentAnswer || '(未作答)' }}
+                        </template>
+                        <span v-else>{{ q.studentAnswer || '未作答' }}</span>
+                    </div>
                  </div>
                  <div class="analysis-row">
                     <span class="label">正确答案：</span>
-                    <span class="value text-success">{{ q.answer || q.correctAnswer }}</span>
+                    <div class="value text-success">
+                        <template v-if="q.type === 'true_false'">
+                            {{ q.answer === 'A' ? '正确' : '错误' }}
+                        </template>
+                        <template v-else>
+                            {{ q.answer || q.correctAnswer }}
+                        </template>
+                    </div>
                  </div>
                  
                  <!-- Analysis Section with Collapse -->
@@ -433,6 +445,16 @@ onMounted(() => {
 
 .text-success { color: #67C23A; font-weight: bold; }
 .text-danger { color: #F56C6C; font-weight: bold; }
+
+/* 滚动定位高亮动画 */
+@keyframes flash {
+    0% { background-color: #fff; }
+    50% { background-color: #ecf5ff; box-shadow: 0 0 15px rgba(64, 158, 255, 0.5); }
+    100% { background-color: #fff; }
+}
+.highlight-flash {
+    animation: flash 2s ease-in-out;
+}
 
 @media (max-width: 768px) {
     .detail-container { padding: 10px; }

@@ -11,7 +11,15 @@ export const useNotifyStore = defineStore('notify', () => {
   // 状态 State
   const socket = ref(null)
   const isConnected = ref(false)
-  const messages = ref([]) // 存储消息列表
+  // 从 LocalStorage 初始化消息列表
+  const messages = ref(JSON.parse(localStorage.getItem('notify_msgs') || '[]'))
+  
+  // 监听 messages 变化，自动持久化
+  const saveToStorage = () => {
+      // 限制只存最近 50 条，防止爆炸
+      const toSave = messages.value.slice(0, 50)
+      localStorage.setItem('notify_msgs', JSON.stringify(toSave))
+  }
   
   // 计算属性 Getters
   const unreadCount = computed(() => messages.value.length)
@@ -42,6 +50,7 @@ export const useNotifyStore = defineStore('notify', () => {
         
         // 添加到列表头部
         messages.value.unshift(msg)
+        saveToStorage() // 保存
         
         // 1. 处理每日特训推送
         if (msg.type === 'daily_train') {
@@ -94,6 +103,7 @@ export const useNotifyStore = defineStore('notify', () => {
   // 3. 清空/标记已读
   const clearMessages = () => {
     messages.value = []
+    saveToStorage()
   }
 
   // 模拟接收消息 (用于后端接口没好时测试 UI)
@@ -104,6 +114,7 @@ export const useNotifyStore = defineStore('notify', () => {
         time: new Date().toLocaleString()
     }
     messages.value.unshift(mockMsg)
+    saveToStorage()
     ElNotification.success({ title: mockMsg.title, message: mockMsg.content })
   }
 

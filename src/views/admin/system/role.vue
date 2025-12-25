@@ -144,21 +144,41 @@ const handleDelete = (row) => {
         <el-button type="primary" :icon="Edit">新增角色</el-button>
       </div>
       
-      <el-table :data="tableData" border stripe>
-        <el-table-column prop="name" label="角色名称" width="150" />
-        <el-table-column prop="key" label="权限字符" width="150" />
-        <el-table-column prop="description" label="描述" />
-        <el-table-column label="操作" width="250" align="center">
-          <template #default="scope">
-            <el-button link type="primary" :icon="Setting" @click="handleEditPermission(scope.row)">权限配置</el-button>
-            <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <!-- PC Table -->
+      <div class="hidden-mobile">
+          <el-table :data="tableData" border stripe>
+            <el-table-column prop="name" label="角色名称" width="150" />
+            <el-table-column prop="key" label="权限字符" width="150" />
+            <el-table-column prop="description" label="描述" />
+            <el-table-column label="操作" width="250" align="center">
+              <template #default="scope">
+                <el-button link type="primary" :icon="Setting" @click="handleEditPermission(scope.row)">权限配置</el-button>
+                <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+      </div>
+
+      <!-- Mobile Cards -->
+      <div class="visible-mobile">
+          <div v-for="role in tableData" :key="role.id" class="mobile-card">
+              <div class="card-header">
+                  <span class="role-name">{{ role.name }}</span>
+                  <el-tag size="small">{{ role.key }}</el-tag>
+              </div>
+              <div class="card-body">
+                  {{ role.description }}
+              </div>
+              <div class="card-footer">
+                  <el-button size="small" type="primary" plain @click="handleEditPermission(role)">权限配置</el-button>
+                  <el-button size="small" type="danger" plain @click="handleDelete(role)">删除</el-button>
+              </div>
+          </div>
+      </div>
     </el-card>
 
     <!-- 权限配置弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="'配置权限 - ' + currentRole.name" width="500px">
+    <el-dialog v-model="dialogVisible" :title="'配置权限 - ' + currentRole.name" width="90%" style="max-width: 500px;">
       <el-tree
         ref="treeRef"
         :data="menuTree"
@@ -179,4 +199,48 @@ const handleDelete = (row) => {
 <style scoped>
 .app-container { padding: 20px; }
 .mb-20 { margin-bottom: 20px; }
+
+/* Responsive */
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+
+@media (max-width: 768px) {
+    .app-container { padding: 10px; }
+    
+    .hidden-mobile { display: none; }
+    .visible-mobile { display: block; }
+    
+    .mobile-card {
+        background: #fff;
+        border: 1px solid #ebeef5;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+    .card-header {
+        padding: 10px 15px;
+        border-bottom: 1px solid #f0f2f5;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #fafafa;
+    }
+    .role-name { font-weight: bold; font-size: 16px; color: #303133; }
+    
+    .card-body { 
+        padding: 15px; 
+        font-size: 14px; 
+        color: #606266; 
+        line-height: 1.5;
+    }
+    
+    .card-footer {
+        padding: 10px 15px;
+        border-top: 1px solid #f0f2f5;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+}
 </style>

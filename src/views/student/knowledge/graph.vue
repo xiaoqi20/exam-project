@@ -223,7 +223,7 @@ const initChart = async () => {
                     bottom: '5%',
                     right: '20%',
                     symbolSize: 16,
-                    initialTreeDepth: 3, 
+                    initialTreeDepth: 2, // 默认只展开到第3层 (根节点是0)
                     label: {
                         position: 'left',
                         verticalAlign: 'middle',

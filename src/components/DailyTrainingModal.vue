@@ -11,12 +11,16 @@ const handleSubmit = (q) => {
   if (!q.userAnswer || (Array.isArray(q.userAnswer) && q.userAnswer.length === 0)) return
   
   if (q.type === 'multiple_choice') {
-      // 多选判分：比较数组
       const userStr = [...q.userAnswer].sort().join('')
       const ansStr = (q.answer || '').split('').sort().join('')
       q.isCorrect = userStr === ansStr
+  } else if (q.type === 'fill_blank') {
+      // 填空题：全匹配（忽略首尾空格）
+      q.isCorrect = q.userAnswer.trim().toLowerCase() === (q.answer || '').trim().toLowerCase()
+  } else if (q.type === 'short_answer') {
+      // 简答题：前端无法直接判分，默认设为 true 仅展示解析
+      q.isCorrect = true 
   } else {
-      // 单选/判断
       q.isCorrect = q.userAnswer === q.answer
   }
   q.showAnalysis = true
@@ -106,6 +110,22 @@ const handleFinish = () => {
                 <el-radio label="A" class="option-item" :class="{'correct': q.showAnalysis && q.answer === 'A', 'wrong': q.showAnalysis && q.userAnswer === 'A' && q.answer !== 'A'}">正确</el-radio>
                 <el-radio label="B" class="option-item" :class="{'correct': q.showAnalysis && q.answer === 'B', 'wrong': q.showAnalysis && q.userAnswer === 'B' && q.answer !== 'B'}">错误</el-radio>
              </el-radio-group>
+          </div>
+
+          <!-- 填空题渲染 -->
+          <div v-else-if="q.type === 'fill_blank'" class="options">
+              <el-input v-model="q.userAnswer" :disabled="q.showAnalysis" placeholder="请输入答案" clearable />
+          </div>
+
+          <!-- 简答题渲染 -->
+          <div v-else-if="q.type === 'short_answer'" class="options">
+              <el-input 
+                v-model="q.userAnswer" 
+                :disabled="q.showAnalysis" 
+                type="textarea" 
+                :rows="4" 
+                placeholder="请输入您的简要回答..." 
+              />
           </div>
 
           <!-- 确认按钮 -->
