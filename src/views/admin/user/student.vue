@@ -9,6 +9,7 @@ const tableData = ref([])
 const total = ref(0)
 const dialogVisible = ref(false)
 const dialogTitle = ref('')
+const isEdit = ref(false) // 新增标志位
 const formRef = ref(null)
 
 const queryParams = reactive({
@@ -29,9 +30,9 @@ const form = reactive({
 })
 
 const rules = {
-  stuId: [{ required: true, message: '请输入学号', trigger: 'blur' }],
+  id: [{ required: true, message: '请输入学号', trigger: 'blur' }],
   sname: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  className: [{ required: true, message: '请输入班级', trigger: 'blur' }]
+  classId: [{ required: true, message: '请选择班级', trigger: 'change' }]
 }
 
 const loadData = async () => {
@@ -75,16 +76,56 @@ const handlePageChange = (page) => {
   loadData()
 }
 
+import { getAllClasses } from '@/api/class'
+
+const classOptions = ref([])
+
+const loadClassOptions = async () => {
+    try {
+        const res = await getAllClasses()
+        // 兼容多种返回结构
+        if (Array.isArray(res)) {
+            classOptions.value = res
+        } else if (res && Array.isArray(res.list)) {
+            classOptions.value = res.list
+        } else if (res && Array.isArray(res.records)) {
+            classOptions.value = res.records
+        }
+    } catch (e) {
+        console.error('加载班级失败', e)
+    }
+}
+
+// 当选择班级时，同步更新 className
+const handleClassChange = (val) => {
+    // 兼容 val 可能为 string 或 number 的情况
+    const selected = classOptions.value.find(item => (item.id === val || item.classId === val))
+    if (selected) {
+        form.className = selected.name || selected.className
+        form.classId = selected.id || selected.classId
+    }
+}
+
+onMounted(() => {
+  loadData()
+  loadClassOptions()
+})
+
 const handleAdd = () => {
   dialogTitle.value = '添加学生'
   dialogVisible.value = true
+  isEdit.value = false // 明确标记为新增
   Object.assign(form, {
-    stuId: '',
-    sname: '',
-    sex: '男',
+    id: null,
+    stuId: null, // 关键：必须置空
+    username: '',
+    nickname: '',
+    password: '',
+    classId: null,
     className: '',
+    email: '',
     phone: '',
-    pwd: ''
+    status: 1
   })
   if (formRef.value) formRef.value.clearValidate()
 }
@@ -92,6 +133,7 @@ const handleAdd = () => {
 const handleEdit = async (row) => {
   dialogTitle.value = '修改学生信息'
   dialogVisible.value = true
+  isEdit.value = true // 明确标记为编辑
   
   Object.assign(form, { 
       stuId: '', sname: '', sex: '男', className: '', phone: '', pwd: '' 
@@ -106,15 +148,17 @@ const handleEdit = async (row) => {
               stuId: data.stuId || data.id,
               sname: data.sname || data.name,
               sex: data.sex,
+              classId: data.classId,
               className: data.className || data.clazz,
               phone: data.phone || data.tel,
               pwd: '' 
           })
       } else {
            Object.assign(form, { 
-              stuId: row.stuId,
-              sname: row.sname,
-              sex: row.sex,
+              stuId: row.stuId || row.id,
+              sname: row.sname || row.nickname || row.username,
+              sex: row.sex || '男',
+              classId: row.classId,
               className: row.className,
               phone: row.phone,
               pwd: '' 
@@ -134,43 +178,29 @@ const handleEdit = async (row) => {
 }
 
 const handleSubmit = async () => {
-  if (!formRef.value) return
-  await formRef.value.validate(async (valid) => {
-    if (valid) {
-      try {
-        if (dialogTitle.value === '添加学生') {
-             const password = form.pwd || `${form.stuId}_123`
-             const payload = {
-                 id: form.stuId,
-                 name: form.sname,
-                 clazz: form.className,
-                 tel: form.phone,
-                 pwd: password,
-                 sex: form.sex
-             }
-             await addStudent(payload)
-             ElMessage.success(`添加成功，密码: ${password}`)
-             dialogVisible.value = false
-             loadData()
-        } else {
-            const payload = {
-                id: form.stuId,
-                name: form.sname,
-                clazz: form.className,
-                tel: form.phone,
-                pwd: form.pwd || '', 
-                sex: form.sex
-            }
-            await updateStudent(payload)
-            ElMessage.success('修改成功')
-            dialogVisible.value = false
-            loadData()
-        }
-      } catch (e) {
-        ElMessage.error('操作失败')
-      }
+  await formRef.value.validate()
+  try {
+    const payload = {
+        id: form.id || form.stuId,
+        name: form.sname || form.name || form.nickname,
+        classId: parseInt(form.classId),
+        sex: form.sex,
+        tel: form.phone || form.tel,
+        email: form.email
     }
-  })
+
+    if (isEdit.value) {
+      await updateStudent(payload)
+      ElMessage.success('修改成功')
+    } else {
+      await addStudent(payload)
+      ElMessage.success('新增成功')
+    }
+    dialogVisible.value = false
+    loadData()
+  } catch (error) {
+    console.error(error)
+  }
 }
 
 const handleDelete = (row) => {
@@ -225,8 +255,8 @@ onMounted(() => {
             <el-table-column prop="stuId" label="学号" width="150" sortable />
             <el-table-column prop="sname" label="姓名" width="120" />
             <el-table-column prop="sex" label="性别" width="80" align="center" />
-            <el-table-column prop="className" label="班级" width="150" sortable />
-            <el-table-column prop="phone" label="联系电话" width="150" />
+            <el-table-column prop="className" label="班级" width="150" align="center" />
+            <el-table-column prop="phone" label="手机号" width="120" align="center" />
             <el-table-column label="操作" min-width="150">
               <template #default="scope">
                 <el-button link type="primary" :icon="Edit" @click="handleEdit(scope.row)">修改</el-button>
@@ -269,9 +299,9 @@ onMounted(() => {
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="90%" style="max-width: 500px;">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-        <el-form-item label="学号" prop="stuId">
-          <el-input v-model="form.stuId" placeholder="请输入学号" :disabled="dialogTitle === '修改学生信息'" />
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="学号" prop="id">
+          <el-input v-model="form.id" placeholder="请输入学号 (如: 2024001)" :disabled="isEdit" />
         </el-form-item>
         <el-form-item label="姓名" prop="sname">
           <el-input v-model="form.sname" placeholder="请输入姓名" />
@@ -289,8 +319,20 @@ onMounted(() => {
             <el-radio label="女">女</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="班级" prop="className">
-          <el-input v-model="form.className" placeholder="请输入班级" />
+        <el-form-item label="所属班级" prop="classId">
+          <el-select 
+            v-model="form.classId" 
+            placeholder="请选择班级" 
+            style="width: 100%"
+            @change="handleClassChange"
+          >
+            <el-option
+              v-for="item in classOptions"
+              :key="item.id || item.classId"
+              :label="item.name || item.className"
+              :value="item.id || item.classId"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="联系电话" prop="phone">
           <el-input v-model="form.phone" placeholder="请输入联系电话" maxlength="11" />

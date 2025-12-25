@@ -32,7 +32,8 @@ export const useMenuStore = defineStore('menu', () => {
         icon: 'Setting',
         children: [
           { id: 21, path: '/dashboard/admin/system/menu', title: '菜单管理', icon: '' },
-          { id: 22, path: '/dashboard/admin/system/role', title: '角色权限', icon: '' }
+          { id: 22, path: '/dashboard/admin/system/role', title: '角色权限', icon: '' },
+          { id: 23, path: '/dashboard/admin/system/class', title: '班级管理', icon: '' }
         ]
       }
     ],

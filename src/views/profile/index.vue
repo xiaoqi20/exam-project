@@ -3,8 +3,9 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { getStudentDetail } from '@/api/student'
-import { getScoreHistory } from '@/api/exam' 
 import { updateProfile, updatePassword } from '@/api/auth'
+import { getScoreHistory } from '@/api/score'
+import { getAllClasses } from '@/api/class'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { User, Lock, Timer, Postcard, Iphone, Message, School } from '@element-plus/icons-vue'
 
@@ -21,12 +22,16 @@ const userInfo = ref({
   sex: '',
   phone: '',
   email: '',
+  classId: null,
   className: '',
   role: 'student'
 })
 
 // Activity Timeline
 const activities = ref([])
+
+// Class Options
+const classOptions = ref([])
 
 // Password Form
 const pwdForm = reactive({
@@ -36,16 +41,53 @@ const pwdForm = reactive({
 })
 const pwdRef = ref(null)
 
+const loadClassOptions = async () => {
+    try {
+        const res = await getAllClasses()
+        // 兼容多种返回结构
+        if (Array.isArray(res)) {
+            classOptions.value = res
+        } else if (res && Array.isArray(res.list)) {
+            classOptions.value = res.list
+        } else if (res && Array.isArray(res.records)) {
+            classOptions.value = res.records
+        }
+    } catch (e) {
+        console.error('加载班级失败', e)
+    }
+}
+
 // Load Data
 const loadProfile = async () => {
   loading.value = true
   try {
-    // 1. Get Detail
+    // 1. Load Classes First (Attempt silently)
+    try {
+        await loadClassOptions()
+    } catch (ignore) {}
+
+    // 2. Get Detail
     if (userStore.role === 'student' || userStore.role === '3') {
-        const res = await getStudentDetail(userStore.userInfo.id)
-        if (res) {
-            // Merge response into userInfo (res contains stuId, sname, sex, etc.)
-            userInfo.value = { ...userInfo.value, ...res }
+        try {
+            const res = await getStudentDetail(userStore.userInfo.id)
+            if (res) {
+                userInfo.value = { ...userInfo.value, ...res }
+                
+                // 尝试修正 classId 类型以匹配下拉框
+                if (userInfo.value.classId && classOptions.value.length > 0) {
+                    const match = classOptions.value.find(c => (c.id == userInfo.value.classId || c.classId == userInfo.value.classId))
+                    if (match) {
+                        userInfo.value.classId = match.id || match.classId
+                        // 顺便确保 className 是最新的
+                        userInfo.value.className = match.name || match.className
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to fetch student detail, using local info:', e)
+            // Fallback: use info from store
+            userInfo.value.sname = userStore.userInfo.name || userStore.userInfo.sname
+            userInfo.value.username = userStore.userInfo.username
         }
     } else {
         // Fallback for teacher/admin
@@ -53,18 +95,28 @@ const loadProfile = async () => {
         userInfo.value.username = userStore.userInfo.username || 'admin'
     }
 
-    // 2. Get Activities (Exam History)
+    // 3. Get Activities (Exam History)
     if (userStore.role === 'student') {
-        const scoreRes = await getScoreHistory(userStore.userInfo.id, { page: 1, size: 5 })
-        if (scoreRes && scoreRes.records) {
-            activities.value = scoreRes.records.map(item => ({
-                content: `参加了考试《${item.title || item.paperName || '未知试卷'}》`,
-                timestamp: item.createTime || item.submitTime,
-                score: item.score || item.userScore,
-                type: 'primary',
-                icon: Timer
-            }))
-        }
+        try {
+            const scoreRes = await getScoreHistory(userStore.userInfo.id, { page: 1, size: 5 })
+            if (scoreRes && scoreRes.records) {
+                activities.value = scoreRes.records.map(item => {
+                    // Mapping fields: Support various backend naming conventions
+                    const title = item.title || item.paperName || item.examTitle || '未命名试卷'
+                    const timeRaw = item.createTime || item.submitTime || item.examTime
+                    const time = timeRaw ? timeRaw.replace('T', ' ') : '最近'
+                    const score = item.score !== undefined ? item.score : (item.userScore !== undefined ? item.userScore : item.studentScore)
+
+                    return {
+                        content: `参加了考试《${title}》`,
+                        timestamp: time,
+                        score: score,
+                        type: 'primary',
+                        icon: Timer
+                    }
+                })
+            }
+        } catch(e) { console.warn('Fetch history failed', e) }
     }
   } catch (e) {
     console.error(e)
@@ -73,19 +125,29 @@ const loadProfile = async () => {
   }
 }
 
+const handleClassChange = (val) => {
+    const selected = classOptions.value.find(item => (item.id == val || item.classId == val))
+    if (selected) {
+        userInfo.value.className = selected.name || selected.className
+        // 确保 ID 也是正确的格式
+        userInfo.value.classId = selected.id || selected.classId
+    }
+}
+
 // Update Info
 const handleUpdateInfo = async () => {
   try {
-    // 调用通用的个人资料更新接口 (/user/profile)
     await updateProfile({
         sname: userInfo.value.sname,
         sex: userInfo.value.sex,
         phone: userInfo.value.phone,
-        email: userInfo.value.email
+        email: userInfo.value.email,
+        classId: userInfo.value.classId,
+        className: userInfo.value.className
     })
     ElMessage.success('资料更新成功')
-    // Update store if name changed
     userStore.userInfo.name = userInfo.value.sname
+    userStore.userInfo.className = userInfo.value.className
   } catch (e) {
     console.error(e)
     ElMessage.error('更新失败')
@@ -105,21 +167,16 @@ const handleUpdatePwd = async () => {
 
     try {
         await ElMessageBox.confirm('修改密码后需要重新登录，是否继续？', '提示', { type: 'warning' })
-        
         await updatePassword({
             oldPassword: pwdForm.oldPassword,
             newPassword: pwdForm.newPassword
         })
-        
         ElMessage.success('密码修改成功，请重新登录')
-        
-        // Logout
         userStore.logout()
         router.push('/login')
     } catch (e) {
         if (e !== 'cancel') {
-            console.error(e)
-            ElMessage.error('密码修改失败，请检查旧密码是否正确')
+            ElMessage.error('密码修改失败')
         }
     }
 }
@@ -134,11 +191,11 @@ onMounted(() => {
     <el-row :gutter="20">
       <!-- Left: Profile Card -->
       <el-col :span="8" :xs="24">
-        <el-card class="box-card profile-card">
+        <el-card v-loading="loading" class="box-card profile-card">
           <div class="avatar-wrapper">
             <el-avatar :size="100" src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" />
             <div class="user-role-tag">
-                <el-tag>{{ userStore.role === 'student' ? '学生' : '教师' }}</el-tag>
+                <el-tag>{{ userStore.role === 'student' ? '学生' : '管理人员' }}</el-tag>
             </div>
           </div>
           <div class="user-header">
@@ -172,6 +229,21 @@ onMounted(() => {
               <el-form label-position="top" :model="userInfo">
                 <el-form-item label="真实姓名">
                   <el-input v-model="userInfo.sname" />
+                </el-form-item>
+                <el-form-item label="所属班级" v-if="userStore.role === 'student'">
+                  <el-select 
+                    v-model="userInfo.classId" 
+                    placeholder="请选择班级" 
+                    style="width: 100%"
+                    disabled
+                  >
+                    <el-option
+                      v-for="item in classOptions"
+                      :key="item.id || item.classId"
+                      :label="item.name || item.className"
+                      :value="item.id || item.classId"
+                    />
+                  </el-select>
                 </el-form-item>
                 <el-form-item label="性别">
                   <el-radio-group v-model="userInfo.sex">

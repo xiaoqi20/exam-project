@@ -54,6 +54,12 @@ const router = createRouter({
           meta: { roles: ['admin'], title: '教师管理' }
         },
         {
+          path: 'admin/system/class',
+          name: 'ClassManage',
+          component: () => import('../views/admin/system/class.vue'),
+          meta: { roles: ['admin'], title: '班级管理' }
+        },
+        {
           path: 'admin/system/menu',
           name: 'MenuManage',
           component: () => import('../views/admin/system/menu.vue'),
