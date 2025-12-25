@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import ForceGraph3D from '3d-force-graph'
-import SpriteText from 'three-spritetext' // Import it
+import SpriteText from 'three-spritetext' // Restored
 import { getKnowledgeAnalysis } from '@/api/knowledge'
 import { ElMessage, ElLoading } from 'element-plus'
 import { Connection, Switch } from '@element-plus/icons-vue' // Add Switch icon
@@ -103,12 +103,11 @@ const init3DGraph = () => {
         .nodeVal(node => Math.max(node.val / 5, 3))
         .nodeThreeObjectExtend(true)
         .nodeThreeObject(node => {
-            const sprite = new SpriteText(node.name)
-            // 亮色模式下，文字颜色加深处理
-            sprite.color = node.color === COLORS.yellow ? '#D48806' : node.color
-            sprite.textHeight = 5
-            sprite.position.y = 10
-            return sprite
+           const sprite = new SpriteText(node.name)
+           sprite.color = node.color === COLORS.yellow ? '#D48806' : node.color
+           sprite.textHeight = 5
+           sprite.position.y = 10
+           return sprite
         })
         .linkWidth(1)
         .linkColor(() => '#99999966') // 亮色背景下使用深灰色线条

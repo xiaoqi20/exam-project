@@ -269,6 +269,8 @@ const submitLogic = async () => {
       duration: actualDuration
     }
     
+    console.log('提交试卷 Payload:', JSON.stringify(submitData, null, 2))
+
     await submitExam(submitData)
     
     localStorage.removeItem(storageKey.value)

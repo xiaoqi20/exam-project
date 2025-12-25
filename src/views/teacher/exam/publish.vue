@@ -3,6 +3,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { Search, Edit, Delete, VideoPlay, VideoPause, Refresh, More } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getExamPaperList, publishExamPaper, updateExamPaper, deleteExamPaper, updateExamPaperStatus } from '@/api/examPaper'
+import { getAllClasses } from '@/api/class'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -28,6 +29,19 @@ const editRules = {
     duration: [{ required: true, message: '请输入考试时长', trigger: 'blur' }]
 }
 
+// 发布相关
+const publishDialogVisible = ref(false)
+const classOptions = ref([])
+const publishForm = reactive({
+    paperId: null,
+    paperTitle: '',
+    classIds: []
+})
+const publishRules = {
+    classIds: [{ required: true, message: '请选择考试班级', trigger: 'change' }]
+}
+const publishFormRef = ref(null)
+
 const statusMap = {
   0: { label: '未发布', type: 'info', value: 'draft' },
   1: { label: '进行中', type: 'success', value: 'published' },
@@ -38,6 +52,7 @@ const loadData = async () => {
     loading.value = true
     try {
         const res = await getExamPaperList(queryParams)
+        // ... (保持原逻辑不变) ...
         if (res && res.records) {
             tableData.value = res.records.map(item => ({
                 id: item.paperId || item.id,
@@ -61,65 +76,72 @@ const loadData = async () => {
     }
 }
 
+// 加载班级列表
+const loadClasses = async () => {
+    try {
+        const res = await getAllClasses()
+        if (res) {
+            // 兼容返回格式
+            classOptions.value = Array.isArray(res) ? res : (res.data || [])
+        }
+    } catch (e) {
+        console.error('加载班级失败', e)
+    }
+}
+
 const handleQuery = () => {
   queryParams.page = 1
   loadData()
 }
 
-const handleReset = () => {
-  queryParams.title = ''
-  queryParams.status = ''
-  handleQuery()
+// ... (省略部分无关代码) ...
+
+const handlePublish = async (row) => {
+    publishForm.paperId = row.id
+    publishForm.paperTitle = row.title
+    publishForm.classIds = [] // 重置选项
+    
+    // 打开前加载班级数据
+    await loadClasses()
+    publishDialogVisible.value = true
 }
 
-const handlePageChange = (page) => {
-    queryParams.page = page
-    loadData()
-}
-
-const handleEdit = (row) => {
-    editForm.id = row.id
-    editForm.title = row.title
-    editForm.duration = row.duration
-    editForm.description = row.description
-    editDialogVisible.value = true
-}
-
-const submitEdit = async () => {
-    if (!editFormRef.value) return
-    await editFormRef.value.validate(async (valid) => {
+const confirmPublish = async () => {
+    console.log('点击了确认发布按钮')
+    if (!publishFormRef.value) {
+        console.error('错误：表单引用不存在 (publishFormRef is null)')
+        return
+    }
+    
+    await publishFormRef.value.validate(async (valid, fields) => {
         if (valid) {
+            console.log('表单验证通过', publishForm)
             try {
-                await updateExamPaper({
-                    id: editForm.id,
-                    title: editForm.title,
-                    duration: editForm.duration,
-                    description: editForm.description
+                if (!publishForm.paperId) {
+                    ElMessage.error('错误：试卷ID缺失')
+                    console.error('Paper ID is missing')
+                    return
+                }
+                
+                console.log('准备发送请求: publishExamPaper', publishForm.paperId, publishForm.classIds)
+                
+                await publishExamPaper(publishForm.paperId, { 
+                    classIds: publishForm.classIds 
                 })
-                ElMessage.success('修改成功')
-                editDialogVisible.value = false
+                
+                console.log('请求发送成功')
+                ElMessage.success('发布成功')
+                publishDialogVisible.value = false
                 loadData()
             } catch (e) {
-                ElMessage.error('修改失败')
+                console.error('请求发送失败:', e)
+                ElMessage.error('发布失败')
             }
+        } else {
+            console.warn('表单验证失败', fields)
+            ElMessage.warning('请检查必填项，确保已选择班级')
         }
     })
-}
-
-const handlePublish = (row) => {
-  ElMessageBox.confirm(`确定要发布试卷 "${row.title}" 吗？`, '发布确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'success'
-  }).then(async () => {
-      try {
-          await publishExamPaper(row.id)
-          ElMessage.success('发布成功')
-          loadData()
-      } catch (e) {
-          ElMessage.error('发布失败')
-      }
-  }).catch(() => {})
 }
 
 const handleEnd = (row) => {
@@ -283,6 +305,39 @@ onMounted(() => {
         <template #footer>
             <el-button @click="editDialogVisible = false">取消</el-button>
             <el-button type="primary" @click="submitEdit">保存</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 发布确认弹窗 -->
+    <el-dialog v-model="publishDialogVisible" title="发布考试" width="500px">
+        <el-form ref="publishFormRef" :model="publishForm" :rules="publishRules" label-width="80px">
+            <el-form-item label="试卷">
+                <el-input v-model="publishForm.paperTitle" disabled />
+            </el-form-item>
+            <el-form-item label="适用班级" prop="classIds">
+                <el-select 
+                    v-model="publishForm.classIds" 
+                    multiple 
+                    placeholder="请选择参考班级" 
+                    style="width: 100%"
+                    collapse-tags
+                    collapse-tags-tooltip
+                >
+                    <el-option
+                        v-for="item in classOptions"
+                        :key="item.id"
+                        :label="item.className"
+                        :value="item.id"
+                    />
+                </el-select>
+            </el-form-item>
+            <div style="color: #909399; font-size: 12px; margin-left: 80px;">
+                <p>注：发布后，仅被选中的班级学生可见。</p>
+            </div>
+        </el-form>
+        <template #footer>
+            <el-button @click="publishDialogVisible = false">取消</el-button>
+            <el-button type="success" @click="confirmPublish">确认发布</el-button>
         </template>
     </el-dialog>
   </div>

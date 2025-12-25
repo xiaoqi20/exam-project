@@ -1,11 +1,11 @@
 import request from '@/utils/request'
 
-// 创建试卷基本信息 (待后端实现)
+// 创建试卷基本信息
 export function createExamPaper(data) {
   return request({
-    url: '/examPaper', // 假设的接口
+    url: '/examPaper',
     method: 'post',
-    data // { title, duration }
+    data // { title, duration, totalMark, status }
   })
 }
 
@@ -45,10 +45,11 @@ export function updateExamPaperStatus(id, status) {
 }
 
 // 获发布试卷
-export function publishExamPaper(id) {
+export function publishExamPaper(id, data) {
   return request({
     url: `/examPaper/publish/${id}`,
-    method: 'put'
+    method: 'put',
+    data
   })
 }
 

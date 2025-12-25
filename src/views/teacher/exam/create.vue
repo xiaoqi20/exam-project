@@ -5,12 +5,24 @@ import { ElMessage } from 'element-plus'
 import { Search, Plus, Delete, ArrowRight, ArrowLeft } from '@element-plus/icons-vue'
 import { getQuestionList } from '@/api/question'
 import { createExamPaper, addQuestionsToPaper, publishExamPaper } from '@/api/examPaper'
+import { getAllClasses } from '@/api/class'
 
 const router = useRouter()
 const activeStep = ref(0)
 const loading = ref(false)
+const classOptions = ref([]) // 班级列表
+const selectedClassIds = ref([]) // 选中的班级
 
-// Step 1: Basic Info
+// Load classes on mount
+onMounted(async () => {
+    loadSourceQuestions()
+    try {
+        const res = await getAllClasses()
+        if (res) classOptions.value = Array.isArray(res) ? res : (res.data || [])
+    } catch (e) {
+        console.error('加载班级失败', e)
+    }
+})
 const baseForm = reactive({
   title: '',
   duration: 90,
@@ -101,44 +113,86 @@ const prevStep = () => {
 }
 
 const handleSubmit = async () => {
+    if (selectedClassIds.value.length === 0) {
+        ElMessage.warning('请选择适用班级')
+        return
+    }
+
     loading.value = true
     try {
-        const paperRes = await createExamPaper({
+        console.log('--- 开始创建试卷流程 ---')
+        
+        // 1. 创建基本信息
+        console.log('Step 1: POST /examPaper', {
             title: baseForm.title,
             duration: baseForm.duration,
-            totalMark: baseForm.totalScore 
+            totalMark: baseForm.totalScore,
+            status: 0
         })
+        const paperRes = await createExamPaper({
+            title: baseForm.title,
+            duration: baseForm.duration,   // 改回 duration
+            totalMark: baseForm.totalScore, // 改回 totalMark
+            status: 0
+        })
+        console.log('Step 1 成功:', paperRes)
         
-        const paperId = paperRes.data ? (paperRes.data.id || paperRes.data) : (paperRes.id || null)
-        if (!paperId) throw new Error('无法获取试卷ID')
+        // 修正：request拦截器已经剥离了外层，返回的是 res.data
+        // 也就是 { "id": 44 }，所以直接取 paperRes.id
+        const paperId = paperRes?.id
+        
+        if (!paperId) {
+            console.error('无法获取 Paper ID', paperRes)
+            throw new Error('试卷创建失败：后端未返回有效的ID')
+        }
+        console.log('获取到 Paper ID:', paperId)
 
+        // 2. 绑定题目
         const questionIds = selectedQuestions.value.map(q => q.id)
         if (questionIds.length > 0) {
-            await addQuestionsToPaper({
+            console.log('Step 2: POST /examPaper/addQuestions', { paperId, questionIds })
+            const addRes = await addQuestionsToPaper({
                 paperId: paperId,
                 questionIds: questionIds
             })
+            console.log('Step 2 成功:', addRes)
         }
 
-        await publishExamPaper(paperId)
+        // 3. 发布并绑定班级
+        console.log('Step 3: PUT /examPaper/publish/' + paperId, { classIds: selectedClassIds.value })
+        const publishRes = await publishExamPaper(paperId, {
+            classIds: selectedClassIds.value
+        })
+        console.log('Step 3 成功 (发布接口响应):', publishRes)
 
         ElMessage.success('试卷创建并发布成功！')
         
+        // 重置状态...
         activeStep.value = 0
         baseForm.title = ''
         baseForm.duration = 90
         baseForm.totalScore = 0
         selectedQuestions.value = []
+        selectedClassIds.value = []
         
     } catch (e) {
-        console.error(e)
-        ElMessage.error('操作失败')
+        console.error('--- 流程中断 ---')
+        console.error('错误详情:', e)
+        // 尝试从 e 中提取后端返回的错误消息
+        const errorMsg = e.response?.data?.msg || e.message || '操作失败'
+        ElMessage.error(errorMsg)
     } finally {
         loading.value = false
     }
 }
-onMounted(() => {
+onMounted(async () => {
     loadSourceQuestions()
+    try {
+        const res = await getAllClasses()
+        if (res) classOptions.value = Array.isArray(res) ? res : (res.data || [])
+    } catch (e) {
+        console.error('加载班级失败', e)
+    }
 })
 </script>
 
@@ -234,9 +288,31 @@ onMounted(() => {
                  <el-descriptions-item label="题目数量">{{ selectedQuestions.length }} 道</el-descriptions-item>
                  <el-descriptions-item label="试卷总分">{{ baseForm.totalScore }} 分</el-descriptions-item>
              </el-descriptions>
+
+             <div style="margin-top: 20px;">
+                <h4 style="margin-bottom: 10px; color: #606266;">发布设置</h4>
+                <el-form label-width="100px">
+                    <el-form-item label="适用班级" required>
+                        <el-select 
+                            v-model="selectedClassIds" 
+                            multiple 
+                            placeholder="请选择参考班级（必选）" 
+                            style="width: 100%"
+                            collapse-tags
+                        >
+                            <el-option
+                                v-for="item in classOptions"
+                                :key="item.id"
+                                :label="item.className"
+                                :value="item.id"
+                            />
+                        </el-select>
+                    </el-form-item>
+                </el-form>
+             </div>
              
              <div style="margin-top: 20px; text-align: center;">
-                 <el-button type="primary" size="large" @click="handleSubmit" :loading="loading" style="width: 100%">确认发布</el-button>
+                 <el-button type="primary" size="large" @click="handleSubmit" :loading="loading" style="width: 100%">确认创建并发布</el-button>
              </div>
         </div>
 
