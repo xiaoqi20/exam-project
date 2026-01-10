@@ -1,10 +1,12 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Search, Edit, Delete, VideoPlay, VideoPause, Refresh, More } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getExamPaperList, publishExamPaper, updateExamPaper, deleteExamPaper, updateExamPaperStatus } from '@/api/examPaper'
 import { getAllClasses } from '@/api/class'
 
+const router = useRouter()
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
@@ -181,6 +183,14 @@ const confirmPublish = async () => {
     })
 }
 
+const handleMonitor = (row) => {
+    router.push({
+        name: 'ExamMonitor',
+        params: { id: row.id },
+        query: { title: row.title }
+    })
+}
+
 const handleEnd = (row) => {
   ElMessageBox.confirm(`确定要结束试卷 "${row.title}" 的考试吗？`, '结束确认', {
     confirmButtonText: '确定',
@@ -262,6 +272,7 @@ onMounted(() => {
                   <el-button link type="danger" :icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
                 </template>
                 <template v-if="scope.row.status === 1">
+                   <el-button link type="primary" :icon="More" @click="handleMonitor(scope.row)">监控</el-button>
                    <el-button link type="warning" :icon="VideoPause" @click="handleEnd(scope.row)">结束</el-button>
                 </template>
                 <template v-if="scope.row.status === 2">

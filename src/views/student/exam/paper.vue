@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { reactive, ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Clock, List, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
@@ -18,6 +18,7 @@ const paperData = ref([])
 const answers = reactive({})
 const isMobile = ref(false)
 const sheetVisible = ref(false) // Mobile answer sheet drawer
+let ws = null // WebSocket 实例
 
 // Track current question for mobile navigation
 const currentQIndex = ref(0)
@@ -52,12 +53,16 @@ const debounce = (fn, delay) => {
 }
 
 // 监听答案变化并保存
-import { watch } from 'vue'
 watch(answers, debounce((newVal) => {
     if (Object.keys(newVal).length > 0) {
         localStorage.setItem(answersKey.value, JSON.stringify(newVal))
     }
 }, 1000), { deep: true })
+
+// 监听答题进度 (合并防抖)
+watch(answers, debounce(() => {
+    reportProgress()
+}, 2000), { deep: true })
 
 const checkMobile = () => {
     isMobile.value = window.innerWidth < 768
@@ -306,9 +311,12 @@ const submitLogic = async () => {
       duration: actualDuration
     }
     
-    console.log('提交试卷 Payload:', JSON.stringify(submitData, null, 2))
-
     await submitExam(submitData)
+    
+    // 发送交卷信号 (确保在连接断开前发送)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'STATUS_UPDATE', data: { status: 'submitted' } }))
+    }
     
     localStorage.removeItem(storageKey.value)
     localStorage.removeItem(startTimeKey.value)
@@ -318,7 +326,11 @@ const submitLogic = async () => {
     loadingInstance.close()
 
     ElMessage.success('试卷提交成功！')
-    router.replace('/dashboard/student/exam/hall') 
+    
+    // 延迟跳转，确保 WS 消息已发出
+    setTimeout(() => {
+        router.replace('/dashboard/student/exam/hall') 
+    }, 500) 
   } catch (error) {
     loadingInstance.close()
     ElMessage.error('提交失败，请重试')
@@ -358,17 +370,96 @@ const handleSubmit = (isAuto = false) => {
   }).catch(() => {})
 }
 
+// WebSocket Logic
+const initWebSocket = () => {
+    // 仅正式考试连接监控，练习模式跳过
+    if (examInfo.id === 'practice') return
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    // 严格对标规范：/ws/exam/{examId}/{userId}
+    const wsUrl = `${protocol}//${host}/ws/exam/${examInfo.id}/${userStore.userInfo.id}`
+    
+    ws = new WebSocket(wsUrl)
+    
+    ws.onopen = () => {
+        // 上线通知
+        ws.send(JSON.stringify({ type: 'STATUS_UPDATE', data: { status: 'online' } }))
+        
+        // 心跳包 (每30秒发一次，保活 + 更新在线状态)
+        setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'STATUS_UPDATE', data: { status: 'online' } }))
+            }
+        }, 30000)
+    }
+    
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data)
+            if (msg.type === 'FORCE_SUBMIT') {
+                ElMessageBox.alert('您已被老师强制收卷！', '考试结束', {
+                    confirmButtonText: '确定',
+                    callback: () => handleSubmit(true) // 自动提交
+                })
+            } else if (msg.type === 'REMIND') {
+                ElNotification({
+                    title: '监考老师提醒',
+                    message: msg.data.message,
+                    type: 'warning',
+                    duration: 0
+                })
+            }
+        } catch(e) {}
+    }
+}
+
+// 监听切屏
+const handleVisibilityChange = () => {
+    if (document.hidden && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ 
+            type: 'ALERT', 
+            data: { alertType: 'switch_screen' } 
+        }))
+        ElMessage.warning('警告：检测到切屏行为，已记录！')
+    }
+}
+
+// 上报进度 (在答题时调用)
+const reportProgress = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        // 计算已答数量
+        let answeredCount = 0
+        for (const key in answers) {
+            if (answers[key] && (Array.isArray(answers[key]) ? answers[key].length > 0 : true)) {
+                answeredCount++
+            }
+        }
+        ws.send(JSON.stringify({ 
+            type: 'PROGRESS_UPDATE', 
+            data: { 
+                progress: answeredCount,
+                total: paperData.value.length // 携带总题数
+            } 
+        }))
+    }
+}
+
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  document.addEventListener('visibilitychange', handleVisibilityChange) // 注册切屏监听
   loadPaper()
   initRemainingTime()
   startTimer()
+  initWebSocket() // 启动监控
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', checkMobile)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (timer.value) clearInterval(timer.value)
+  if (ws) ws.close()
 })
 </script>
 

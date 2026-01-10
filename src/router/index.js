@@ -108,6 +108,12 @@ const router = createRouter({
           component: () => import('../views/teacher/score/report.vue'),
           meta: { roles: ['teacher'], title: '成绩报表' }
         },
+        {
+          path: 'teacher/exam/monitor/:id',
+          name: 'ExamMonitor',
+          component: () => import('../views/teacher/exam/monitor.vue'),
+          meta: { roles: ['teacher'], title: '实时考试监控' }
+        },
         // Student Routes
         {
           path: 'student/exam/hall',

@@ -32,8 +32,12 @@ export const useNotifyStore = defineStore('notify', () => {
 
     // 假设后端地址 (注意替换为真实后端端口)
     const userId = userStore.userInfo.id
-    // 这里的 url 需要根据你实际后端的地址修改
-    const wsUrl = `ws://localhost:8080/ws/notify/${userId}` 
+    
+    // 使用相对路径 + 代理 (/ws)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    // 规范：通用通知使用 examId = 0
+    const wsUrl = `${protocol}//${host}/ws/exam/0/${userId}` 
     
     socket.value = new WebSocket(wsUrl)
 
