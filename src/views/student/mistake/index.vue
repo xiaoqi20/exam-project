@@ -1,8 +1,9 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { getMistakeList } from '@/api/mistake'
-import { ElMessage } from 'element-plus'
-import { ArrowDown, ArrowUp, Warning, MagicStick } from '@element-plus/icons-vue'
+import { generateSimilarQuestions } from '@/api/ai' // New
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown, ArrowUp, Warning, MagicStick, VideoPlay, Check, Close } from '@element-plus/icons-vue' // Icons
 import MarkdownViewer from '@/components/MarkdownViewer.vue'
 import { useUserStore } from '@/stores/user'
 
@@ -10,6 +11,14 @@ const userStore = useUserStore()
 const loading = ref(false)
 const mistakeList = ref([])
 const total = ref(0)
+
+// AI Practice State
+const practiceDialogVisible = ref(false)
+const practiceLoading = ref(false)
+const practiceQuestions = ref([])
+const practiceAnswers = ref({})
+const practiceSubmitted = ref(false)
+
 const queryParams = reactive({
   page: 1,
   size: 10,
@@ -32,6 +41,60 @@ const isDateInRange = (dateStr) => {
     const start = new Date(queryParams.dateRange[0]).getTime()
     const end = new Date(queryParams.dateRange[1]).getTime()
     return target >= start && target <= end
+}
+
+// --- AI 变式训练核心逻辑 ---
+const handleAiPractice = async (item) => {
+    practiceDialogVisible.value = true
+    practiceLoading.value = true
+    practiceSubmitted.value = false
+    practiceQuestions.value = []
+    practiceAnswers.value = {}
+
+    try {
+        const res = await generateSimilarQuestions({
+            questionId: item.id,
+            content: item.content, 
+            count: 3 
+        })
+        
+        const questions = Array.isArray(res) ? res : (res.data || [])
+        
+        if (questions.length > 0) {
+            practiceQuestions.value = questions.map(q => ({
+                ...q,
+                options: (typeof q.options === 'string' && q.options.startsWith('{')) ? JSON.parse(q.options) : q.options,
+            }))
+        } else {
+            ElMessage.warning('AI 暂时没能生成相关题目')
+            practiceDialogVisible.value = false
+        }
+    } catch (e) {
+        console.error(e)
+        ElMessage.error('生成训练题失败')
+        practiceDialogVisible.value = false
+    } finally {
+        practiceLoading.value = false
+    }
+}
+
+const submitPractice = () => {
+    if (Object.keys(practiceAnswers.value).length < practiceQuestions.value.length) {
+        ElMessage.warning('请先完成所有题目')
+        return
+    }
+    practiceSubmitted.value = true
+    
+    let correctCount = 0
+    practiceQuestions.value.forEach((q, idx) => {
+        if (practiceAnswers.value[idx] === q.answer) correctCount++
+    })
+    
+    if (correctCount === practiceQuestions.value.length) {
+        ElMessage.success('太棒了！全部正确，您已掌握该知识点！')
+    } else {
+        ElMessage.info(`答对 ${correctCount} / ${practiceQuestions.value.length} 题`)
+    }
 }
 
 // 加载数据
@@ -253,12 +316,15 @@ onMounted(() => {
                     <span class="divider">|</span>
                     <span>正确答案：<span class="text-success">{{ item.answer }}</span></span>
                 </div>
-                <el-button link type="primary" @click="toggleAnalysis(item)">
-                    {{ item.showAnalysis ? '收起解析' : '查看解析' }}
-                    <el-icon class="el-icon--right">
-                        <ArrowUp v-if="item.showAnalysis" /><ArrowDown v-else />
-                    </el-icon>
-                </el-button>
+                <div>
+                    <el-button link type="success" :icon="VideoPlay" @click="handleAiPractice(item)">AI 举一反三</el-button>
+                    <el-button link type="primary" @click="toggleAnalysis(item)">
+                        {{ item.showAnalysis ? '收起解析' : '查看解析' }}
+                        <el-icon class="el-icon--right">
+                            <ArrowUp v-if="item.showAnalysis" /><ArrowDown v-else />
+                        </el-icon>
+                    </el-button>
+                </div>
             </div>
 
             <!-- 解析区域 (折叠) -->
@@ -296,6 +362,47 @@ onMounted(() => {
             @current-change="handlePageChange"
         />
     </div>
+
+    <!-- AI Practice Dialog -->
+    <el-dialog v-model="practiceDialogVisible" title="AI 变式训练营" width="600px" :close-on-click-modal="false">
+        <div v-loading="practiceLoading" class="practice-container">
+            <template v-if="!practiceLoading && practiceQuestions.length > 0">
+                <div v-for="(q, idx) in practiceQuestions" :key="idx" class="practice-item">
+                    <div class="p-title">{{ idx + 1 }}. {{ q.content }}</div>
+                    <div class="p-options">
+                        <el-radio-group v-model="practiceAnswers[idx]" :disabled="practiceSubmitted">
+                            <el-radio 
+                                v-for="(val, key) in q.options" 
+                                :key="key" 
+                                :label="key" 
+                                border 
+                                class="p-radio"
+                                :class="{
+                                    'is-correct': practiceSubmitted && key === q.answer,
+                                    'is-wrong': practiceSubmitted && practiceAnswers[idx] === key && key !== q.answer
+                                }"
+                            >
+                                {{ key }}. {{ val }}
+                            </el-radio>
+                        </el-radio-group>
+                    </div>
+                    <div v-if="practiceSubmitted" class="p-analysis">
+                        <div class="ans-label">
+                            正确答案：<span class="text-success">{{ q.answer }}</span>
+                            <span v-if="practiceAnswers[idx] === q.answer" class="user-result success"><el-icon><Check /></el-icon> 回答正确</span>
+                            <span v-else class="user-result error"><el-icon><Close /></el-icon> 回答错误</span>
+                        </div>
+                        <div class="ans-text">{{ q.analysis }}</div>
+                    </div>
+                </div>
+            </template>
+            <el-empty v-if="!practiceLoading && practiceQuestions.length === 0" description="生成失败" />
+        </div>
+        <template #footer>
+            <el-button @click="practiceDialogVisible = false">关闭</el-button>
+            <el-button type="primary" @click="submitPractice" v-if="!practiceSubmitted && practiceQuestions.length > 0">提交答案</el-button>
+        </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -396,6 +503,20 @@ onMounted(() => {
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
 .pagination-container { display: flex; justify-content: center; margin-top: 30px; }
+
+/* Practice Dialog Styles */
+.practice-container { max-height: 500px; overflow-y: auto; padding: 10px; }
+.practice-item { margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px dashed #eee; }
+.p-title { font-weight: bold; margin-bottom: 10px; font-size: 15px; }
+.p-radio { width: 100%; margin-bottom: 10px; margin-left: 0 !important; white-space: normal; height: auto; padding: 10px; }
+.p-analysis { margin-top: 10px; background: #f0f9eb; padding: 10px; border-radius: 4px; font-size: 13px; }
+.ans-label { font-weight: bold; margin-bottom: 5px; display: flex; align-items: center; gap: 10px; }
+.user-result.success { color: #67C23A; font-weight: bold; }
+.user-result.error { color: #F56C6C; font-weight: bold; }
+
+/* Highlight styles for result */
+:deep(.is-correct) { background-color: #f0f9eb !important; border-color: #67C23A !important; color: #67C23A !important; }
+:deep(.is-wrong) { background-color: #fef0f0 !important; border-color: #F56C6C !important; color: #F56C6C !important; }
 
 /* Mobile */
 @media (max-width: 768px) {
