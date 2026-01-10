@@ -1,8 +1,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import ForceGraph3D from '3d-force-graph'
-import SpriteText from 'three-spritetext' // Restored
+// 移除静态引用，改为动态加载
+// import ForceGraph3D from '3d-force-graph'
+// import SpriteText from 'three-spritetext'
 import { getKnowledgeAnalysis } from '@/api/knowledge'
 import { ElMessage, ElLoading } from 'element-plus'
 import { Connection, Switch } from '@element-plus/icons-vue' // Add Switch icon
@@ -87,42 +88,74 @@ const flattenTree = (node, parentId = null, nodes = [], links = []) => {
     return { nodes, links }
 }
 
-const init3DGraph = () => {
+const init3DGraph = async () => {
     if (!graph3dRef.value || !rawData.value) return
     
+    // 动态加载库，确保只在需要时执行
+    let ForceGraph3D, SpriteText
+    const loadingInstance = ElLoading.service({
+        target: '.graph-container',
+        text: '正在启动 3D 引擎...',
+        background: 'rgba(255, 255, 255, 0.8)'
+    })
+
+    try {
+        // 使用 Promise.all 并行加载
+        const [forceGraphMod, spriteTextMod] = await Promise.all([
+            import('3d-force-graph'),
+            import('three-spritetext')
+        ])
+        ForceGraph3D = forceGraphMod.default || forceGraphMod
+        SpriteText = spriteTextMod.default || spriteTextMod
+    } catch (error) {
+        loadingInstance.close()
+        console.error('3D 库加载失败:', error)
+        ElMessage.error('您的环境暂不支持 3D 视图，请使用 2D 模式')
+        is3DMode.value = false // 自动切回 2D
+        return
+    }
+
     const { nodes, links } = flattenTree(rawData.value)
     
     // 销毁旧实例（防止重复渲染）
     if (graph3dRef.value.innerHTML) graph3dRef.value.innerHTML = ''
 
-    graph3dInstance = ForceGraph3D()(graph3dRef.value)
-        .graphData({ nodes, links })
-        .nodeLabel('desc') 
-        .nodeColor(node => node.color)
-        .nodeResolution(16)
-        .nodeVal(node => Math.max(node.val / 5, 3))
-        .nodeThreeObjectExtend(true)
-        .nodeThreeObject(node => {
-           const sprite = new SpriteText(node.name)
-           sprite.color = node.color === COLORS.yellow ? '#D48806' : node.color
-           sprite.textHeight = 5
-           sprite.position.y = 10
-           return sprite
-        })
-        .linkWidth(1)
-        .linkColor(() => '#99999966') // 亮色背景下使用深灰色线条
-        .linkDirectionalParticles(2)
-        .linkDirectionalParticleWidth(1.5)
-        .linkDirectionalParticleColor(() => '#409EFF') // 使用品牌蓝粒子
-        .backgroundColor('#f5f7fa') // 改为淡灰色背景
-        .showNavInfo(false)
-        
-    // 移除之前的黑色渐变背景
-    graph3dRef.value.style.background = '#f5f7fa'
-
-    // 自适应窗口
-    graph3dInstance.width(graph3dRef.value.clientWidth)
-    graph3dInstance.height(600)
+    try {
+        graph3dInstance = ForceGraph3D()(graph3dRef.value)
+            .graphData({ nodes, links })
+            .nodeLabel('desc') 
+            .nodeColor(node => node.color)
+            .nodeResolution(16)
+            .nodeVal(node => Math.max(node.val / 5, 3))
+            .nodeThreeObjectExtend(true)
+            .nodeThreeObject(node => {
+               const sprite = new SpriteText(node.name)
+               sprite.color = node.color === COLORS.yellow ? '#D48806' : node.color
+               sprite.textHeight = 5
+               sprite.position.y = 10
+               return sprite
+            })
+            .linkWidth(1)
+            .linkColor(() => '#99999966') // 亮色背景下使用深灰色线条
+            .linkDirectionalParticles(2)
+            .linkDirectionalParticleWidth(1.5)
+            .linkDirectionalParticleColor(() => '#409EFF') // 使用品牌蓝粒子
+            .backgroundColor('#f5f7fa') // 改为淡灰色背景
+            .showNavInfo(false)
+            
+        // 移除之前的黑色渐变背景
+        graph3dRef.value.style.background = '#f5f7fa'
+    
+        // 自适应窗口
+        graph3dInstance.width(graph3dRef.value.clientWidth)
+        graph3dInstance.height(600)
+    } catch (renderError) {
+        console.error('3D 渲染失败:', renderError)
+        ElMessage.error('WebGL 初始化失败，请检查浏览器设置')
+        is3DMode.value = false
+    } finally {
+        loadingInstance.close()
+    }
 }
 
 // 加载数据并渲染

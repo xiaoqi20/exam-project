@@ -52,7 +52,6 @@ const loadData = async () => {
     loading.value = true
     try {
         const res = await getExamPaperList(queryParams)
-        // ... (保持原逻辑不变) ...
         if (res && res.records) {
             tableData.value = res.records.map(item => ({
                 id: item.paperId || item.id,
@@ -94,7 +93,45 @@ const handleQuery = () => {
   loadData()
 }
 
-// ... (省略部分无关代码) ...
+const handleReset = () => {
+  queryParams.title = ''
+  queryParams.status = ''
+  handleQuery()
+}
+
+const handlePageChange = (page) => {
+    queryParams.page = page
+    loadData()
+}
+
+const handleEdit = (row) => {
+    editForm.id = row.id
+    editForm.title = row.title
+    editForm.duration = row.duration
+    editForm.description = row.description
+    editDialogVisible.value = true
+}
+
+const submitEdit = async () => {
+    if (!editFormRef.value) return
+    await editFormRef.value.validate(async (valid) => {
+        if (valid) {
+            try {
+                await updateExamPaper({
+                    id: editForm.id,
+                    title: editForm.title,
+                    duration: editForm.duration,
+                    description: editForm.description
+                })
+                ElMessage.success('修改成功')
+                editDialogVisible.value = false
+                loadData()
+            } catch (e) {
+                ElMessage.error('修改失败')
+            }
+        }
+    })
+}
 
 const handlePublish = async (row) => {
     publishForm.paperId = row.id

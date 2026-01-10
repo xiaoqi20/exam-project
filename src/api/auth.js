@@ -25,3 +25,16 @@ export function updatePassword(data) {
     data
   })
 }
+
+// 刷新 Token
+export function refreshToken(token) {
+  return request({
+    url: '/refresh',
+    method: 'post',
+    data: {
+      refreshToken: token
+    },
+    // 特殊标记：避免刷新接口本身401时死循环
+    __isRefreshToken: true 
+  })
+}

@@ -38,6 +38,26 @@ const examInfo = reactive({
 
 const storageKey = computed(() => `exam_deadline_${userStore.userInfo.id}_${examInfo.id}`)
 const startTimeKey = computed(() => `exam_start_${userStore.userInfo.id}_${examInfo.id}`)
+const answersKey = computed(() => `exam_answers_${userStore.userInfo.id}_${examInfo.id}`)
+
+// 防抖函数实现
+const debounce = (fn, delay) => {
+  let t = null
+  return (...args) => {
+    if (t) clearTimeout(t)
+    t = setTimeout(() => {
+      fn(...args)
+    }, delay)
+  }
+}
+
+// 监听答案变化并保存
+import { watch } from 'vue'
+watch(answers, debounce((newVal) => {
+    if (Object.keys(newVal).length > 0) {
+        localStorage.setItem(answersKey.value, JSON.stringify(newVal))
+    }
+}, 1000), { deep: true })
 
 const checkMobile = () => {
     isMobile.value = window.innerWidth < 768
@@ -196,6 +216,22 @@ const loadPaper = async () => {
 
         return adaptedQ
       })
+
+      // 恢复上次保存的答案
+      const savedAnswers = localStorage.getItem(answersKey.value)
+      if (savedAnswers) {
+          try {
+              const parsed = JSON.parse(savedAnswers)
+              Object.assign(answers, parsed)
+              ElMessage({
+                  message: '已自动为您恢复答题进度',
+                  type: 'success',
+                  duration: 2000
+              })
+          } catch (e) {
+              console.error('恢复进度失败', e)
+          }
+      }
     }
   } catch (error) {
     ElMessage.error('加载试卷失败')
@@ -244,7 +280,8 @@ const submitLogic = async () => {
       if (Array.isArray(val)) {
         studentAnswer = val.join('')
       } else {
-        studentAnswer = val ? val.toString() : ''
+        // 去除首尾空格，防止填空题因为多余空格导致判错
+        studentAnswer = val ? val.toString().trim() : ''
       }
       
       if (studentAnswer) {
@@ -275,6 +312,7 @@ const submitLogic = async () => {
     
     localStorage.removeItem(storageKey.value)
     localStorage.removeItem(startTimeKey.value)
+    localStorage.removeItem(answersKey.value)
     
     // 关闭加载
     loadingInstance.close()

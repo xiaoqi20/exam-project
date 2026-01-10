@@ -259,7 +259,30 @@ onMounted(() => {
              <!-- Options Area (Only for choice types) -->
              <div class="options-list" v-if="q.type === 'choice' || q.type === 'multiple_choice' || q.type === 'true_false'">
                  <template v-if="q.type === 'choice' || q.type === 'multiple_choice'">
-// ... (skip)
+                    <div 
+                        v-for="(val, key) in q.options" 
+                        :key="key" 
+                        class="option-item"
+                        :class="getOptionClass(q, key)"
+                    >
+                        <span class="opt-label">{{ key }}.</span>
+                        <span class="opt-text">{{ val }}</span>
+                        <!-- 勾选或叉叉标识 -->
+                        <div class="icon-indicator">
+                            <el-icon v-if="(q.answer || '').includes(key)" class="success"><Check /></el-icon>
+                            <el-icon v-if="(q.studentAnswer || '').includes(key) && !(q.answer || '').includes(key)" class="danger"><Close /></el-icon>
+                        </div>
+                    </div>
+                 </template>
+                 <template v-else-if="q.type === 'true_false'">
+                    <div class="option-item" :class="q.answer === 'A' ? 'correct-option' : (q.studentAnswer === 'A' ? 'wrong-option' : '')">
+                        <span class="opt-label">A.</span>
+                        <span class="opt-text">正确</span>
+                    </div>
+                    <div class="option-item" :class="q.answer === 'B' ? 'correct-option' : (q.studentAnswer === 'B' ? 'wrong-option' : '')">
+                        <span class="opt-label">B.</span>
+                        <span class="opt-text">错误</span>
+                    </div>
                  </template>
              </div>
              
