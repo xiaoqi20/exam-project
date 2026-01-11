@@ -125,6 +125,13 @@ export const useMenuStore = defineStore('menu', () => {
         children: []
       },
       {
+        id: 12,
+        path: '/dashboard/student/learning-path',
+        title: '学习路径',
+        icon: 'Guide', // 使用 Guide 或 Compass 图标
+        children: []
+      },
+      {
         id: 9,
         path: '/dashboard/student/profile',
         title: '个人信息',

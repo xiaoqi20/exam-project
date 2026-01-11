@@ -146,12 +146,29 @@ const router = createRouter({
           meta: { roles: ['student'], title: '知识图谱' }
         },
         {
+          path: 'student/learning-path',
+          name: 'LearningPathList',
+          component: () => import('../views/student/learning-path/index.vue'),
+          meta: { roles: ['student'], title: '学习路径中心' }
+        },
+        {
           path: 'student/profile/info',
           name: 'StudentProfileInfo',
           component: () => import('../views/profile/index.vue'),
           meta: { roles: ['student'], title: '个人资料' }
+        },
+        // 404 Fallback for dashboard routes
+        {
+          path: ':pathMatch(.*)*',
+          redirect: '/dashboard/welcome'
         }
       ]
+    },
+    {
+      path: '/learning-path/detail/:id',
+      name: 'LearningPathDetail',
+      component: () => import('../views/student/learning-path/detail.vue'),
+      meta: { roles: ['student'], title: '学习计划详情' }
     },
     {
       path: '/exam/paper/:id',
