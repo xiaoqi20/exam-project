@@ -52,7 +52,8 @@ export const useMenuStore = defineStore('menu', () => {
         icon: 'Document',
         children: [
           { id: 30, path: '/dashboard/teacher/knowledge/list', title: '知识点管理', icon: '' },
-          { id: 31, path: '/dashboard/teacher/question/list', title: '试题列表', icon: '' }
+          { id: 31, path: '/dashboard/teacher/question/list', title: '试题列表', icon: '' },
+          { id: 32, path: '/dashboard/teacher/ai-agent', title: 'AI 智能出题', icon: 'MagicStick' }
         ]
       },
       {

@@ -109,6 +109,12 @@ const router = createRouter({
           meta: { roles: ['teacher'], title: '成绩报表' }
         },
         {
+          path: 'teacher/ai-agent',
+          name: 'AiAgent',
+          component: () => import('../views/teacher/ai-agent/index.vue'),
+          meta: { roles: ['teacher'], title: 'AI 智能出题' }
+        },
+        {
           path: 'teacher/exam/monitor/:id',
           name: 'ExamMonitor',
           component: () => import('../views/teacher/exam/monitor.vue'),
