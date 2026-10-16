@@ -106,7 +106,7 @@ const router = createRouter({
           path: 'teacher/score/report',
           name: 'ScoreReport',
           component: () => import('../views/teacher/score/report.vue'),
-          meta: { roles: ['teacher'], title: '成绩报表' }
+          meta: { roles: ['teacher'], title: '监考日志', hiddenSidebar: true } // Add hiddenSidebar
         },
         {
           path: 'teacher/ai-agent',
@@ -118,7 +118,7 @@ const router = createRouter({
           path: 'teacher/exam/monitor/:id',
           name: 'ExamMonitor',
           component: () => import('../views/teacher/exam/monitor.vue'),
-          meta: { roles: ['teacher'], title: '实时考试监控' }
+          meta: { roles: ['teacher'], title: '实时考试监控', hiddenSidebar: true } // Add hiddenSidebar
         },
         // Student Routes
         {

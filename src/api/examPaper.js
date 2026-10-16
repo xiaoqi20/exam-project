@@ -61,3 +61,11 @@ export function getExamPaperList(params) {
     params
   })
 }
+
+// 获取试卷详情 (用于回显或日志页标题)
+export function getExamPaperDetail(id) {
+  return request({
+    url: `/examPaper/${id}`,
+    method: 'get'
+  })
+}

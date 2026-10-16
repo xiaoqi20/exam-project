@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElMessage, ElNotification, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Monitor, Warning, CircleCheck, Refresh, SwitchButton, Bell } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useUserStore } from '@/stores/user'
@@ -13,7 +13,6 @@ const userStore = useUserStore()
 const examId = route.params.id
 const examTitle = ref(route.query.title || '在线考试监控')
 
-// 统计数据
 const stats = ref({
     total: 0,
     online: 0,
@@ -27,45 +26,77 @@ let ws = null
 let reconnectTimer = null
 let clockTimer = null
 
-// 缓存 Key
 const CACHE_KEY = `monitor_progress_${examId}`
+
+// 核心辅助：清洗 ID (移除 S/T 前缀，仅保留纯数字或核心字符串)
+const cleanId = (id) => {
+    if (!id) return ''
+    return id.toString().replace(/^[ST]_?/, '')
+}
 
 // --- API: 初始化数据 ---
 const loadInitData = async () => {
     try {
+        console.log('Fetching monitor data for:', examId)
         const res = await request.get(`/exam/monitor/${examId}/init`)
-        if (res) {
-            // ... (stats logic) ...
-            stats.value = {
-                total: res.stats?.total || 0,
-                online: res.stats?.online || 0,
-                submitted: res.stats?.submitted || 0,
-                alerts: 0
-            }
-            
-            const globalTotalQ = res.stats?.totalQuestions || 0
-            
-            // 读取本地缓存
-            const cachedProgress = JSON.parse(sessionStorage.getItem(CACHE_KEY) || '{}')
+        const rawData = res.data || res 
+        console.log('Monitor RAW Data:', rawData)
 
-            studentList.value = (res.students || []).map(s => {
-                // 优先使用缓存的进度 (如果缓存比后端大)
-                const localP = cachedProgress[s.id] || 0
-                const serverP = s.progress || 0
-                const finalP = Math.max(localP, serverP)
+        if (rawData) {
+            stats.value.total = rawData.totalCount || 0
+            stats.value.online = rawData.onlineCount || 0
+            stats.value.submitted = rawData.submittedCount || 0
+            
+            // 1. 获取全局总题数 (作为兜底)
+            const globalTotalQ = rawData.totalQuestions || rawData.questionCount || 0
+            
+            const progressMap = rawData.progresses || {}
+            const onlineList = rawData.onlineStudents || []
+            
+            console.log('Progress Map Keys:', Object.keys(progressMap))
+            
+            studentList.value = onlineList.map(s => {
+                // 防御性获取 ID
+                const rawId = s.id || s.userId || s.studentId
+                const cleanSid = cleanId(rawId)
+                
+                // 进度匹配：暴力尝试所有可能的 Key
+                // 优先级：原始ID > S+纯ID > 纯ID > S_纯ID
+                let progressVal = 0
+                if (progressMap) {
+                    const keysToTry = [
+                        rawId, 
+                        `S${cleanSid}`, 
+                        cleanSid, 
+                        `S_${cleanSid}`
+                    ]
+                    
+                    for (const k of keysToTry) {
+                        if (progressMap[k] !== undefined) {
+                            progressVal = parseInt(progressMap[k])
+                            break
+                        }
+                    }
+                }
+
+                // 总题数兜底
+                const totalQ = s.totalQuestions || globalTotalQ || 0
 
                 return {
                     ...s,
+                    id: cleanSid, // 展示用纯 ID
+                    rawId: rawId, // 保留原始 ID
+                    name: s.name || s.studentName || cleanSid,
+                    status: 'online',
+                    progress: progressVal,
+                    totalQuestions: totalQ,
                     warningCount: s.warningCount || 0,
-                    progress: finalP,
-                    totalQuestions: s.totalQuestions || globalTotalQ,
-                    avatar: s.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.id}`
+                    avatar: s.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${cleanSid}`
                 }
             })
             updateStats()
         }
     } catch (e) {
-// ...
         console.error('初始化监控失败', e)
         ElMessage.error('无法加载监控数据')
     }
@@ -74,13 +105,11 @@ const loadInitData = async () => {
 // --- WebSocket: 实时通信 ---
 const initWebSocket = () => {
     if (ws) ws.close()
-    
-    // 构建 WS 地址：/ws/exam/{examId}/{userId}
-    // 注意：生产环境需将 http 改为 ws, https 改为 wss
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host 
-    // 严格对标规范：/ws/exam/{examId}/{userId}
-    const wsUrl = `${protocol}//${host}/ws/exam/${examId}/${userStore.userInfo.id}`
+    // 连接时使用不带 T_ 的 ID (假设后端已支持)
+    const uid = cleanId(userStore.userInfo.id)
+    const wsUrl = `${protocol}//${host}/ws/exam/${examId}/${uid}`
     
     console.log('Connecting WS:', wsUrl)
     ws = new WebSocket(wsUrl)
@@ -93,7 +122,7 @@ const initWebSocket = () => {
     ws.onmessage = (event) => {
         try {
             const msg = JSON.parse(event.data)
-            console.log('收到 WS 消息:', msg) // 调试日志
+            console.log('收到 WS 消息:', msg)
             handleWsMessage(msg)
         } catch (e) {
             console.error('解析消息失败', event.data)
@@ -101,60 +130,41 @@ const initWebSocket = () => {
     }
 
     ws.onclose = () => {
-        console.warn('WS Closed')
-        // 断线重连机制
         reconnectTimer = setTimeout(() => initWebSocket(), 5000)
     }
 }
 
-// 处理消息路由
 const handleWsMessage = (msg) => {
-    // 1. 找到对应的学生
-    const targetId = msg.data?.studentId || msg.data?.userId
-    const student = studentList.value.find(s => s.id == targetId)
+    const rawTargetId = msg.data?.studentId || msg.data?.userId
+    if (!rawTargetId) return
+
+    // 清洗消息中的 ID 再去匹配
+    const targetCleanId = cleanId(rawTargetId)
+    const student = studentList.value.find(s => s.id === targetCleanId)
     
     if (!student) {
-        console.warn(`未找到匹配的学生: ID=${targetId}, 当前列表IDs:`, studentList.value.map(s => s.id))
+        console.warn(`未找到匹配的学生: 原始ID=${rawTargetId}, 清洗ID=${targetCleanId}`)
         return
     }
 
-    console.log('更新学生状态:', student.name, msg.type, msg.data)
-
     switch (msg.type) {
         case 'STATUS_UPDATE':
-            // 收到交卷信号时，强制更新多项指标
+            student.status = msg.data.status
             if (msg.data.status === 'submitted') {
-                student.status = 'submitted'
-                student.progress = student.totalQuestions // 进度拉满
-                student.warningCount = 0 // 清除警告 (可选，看需求)
-                ElNotification({
-                    title: '考试通知',
-                    message: `考生 ${student.name} 已成功交卷`,
-                    type: 'success',
-                    position: 'bottom-right'
-                })
-            } else {
-                student.status = msg.data.status // online / offline
+                ElNotification.success({ title: '交卷通知', message: `${student.name} 已交卷` })
             }
             break
         case 'PROGRESS_UPDATE':
             student.progress = msg.data.progress
-            if (msg.data.total) student.totalQuestions = msg.data.total
-            
-            // 更新缓存
-            {
-                const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || '{}')
-                cached[student.id] = student.progress
-                sessionStorage.setItem(CACHE_KEY, JSON.stringify(cached))
-            }
             break
+        case 'CHEAT_WARNING': 
         case 'ALERT':
             student.warningCount = (student.warningCount || 0) + 1
             ElNotification({
                 title: '作弊预警',
-                message: `考生 ${student.name} 触发异常：${msg.data.alertType}`,
+                message: `考生 ${student.name} 触发：${msg.data.message || msg.data.alertType}`,
                 type: 'error',
-                duration: 0 // 不自动关闭
+                duration: 0
             })
             break
     }
@@ -162,30 +172,16 @@ const handleWsMessage = (msg) => {
 }
 
 const updateStats = () => {
-    stats.value.total = studentList.value.length
-    // 在线人数：状态为 online 的
-    stats.value.online = studentList.value.filter(s => s.status === 'online').length
-    // 已交卷人数：状态为 submitted 的
-    stats.value.submitted = studentList.value.filter(s => s.status === 'submitted').length
     stats.value.alerts = studentList.value.filter(s => s.warningCount > 0).length
+    if (studentList.value.length > 0) {
+        stats.value.online = studentList.value.filter(s => s.status === 'online').length
+    }
 }
 
-// --- 教师操作 (HTTP) ---
 const handleForceSubmit = (student) => {
-    ElMessageBox.confirm(`确定要强制收卷 "${student.name}" 吗？`, '强制收卷', { type: 'warning' }).then(async () => {
+    ElMessageBox.confirm(`确定要强制收卷 "${student.name}" (ID: ${student.id}) 吗？`, '警告', { type: 'warning' }).then(async () => {
         await request.post('/exam/monitor/force-submit', { examId, studentId: student.id })
-        student.status = 'submitted'
         ElMessage.success('指令已发送')
-    })
-}
-
-const handleRemind = (student) => {
-    ElMessageBox.prompt('请输入提醒内容', '发送提醒', {
-        confirmButtonText: '发送',
-        inputValue: '请注意考试纪律，保持摄像头开启。'
-    }).then(async ({ value }) => {
-        await request.post('/exam/monitor/remind', { examId, studentId: student.id, message: value })
-        ElMessage.success('提醒已发送')
     })
 }
 
@@ -193,7 +189,6 @@ onMounted(() => {
     document.body.style.overflow = 'hidden'
     loadInitData()
     initWebSocket()
-    
     clockTimer = setInterval(() => {
         currentTime.value = new Date().toLocaleTimeString()
     }, 1000)
@@ -218,6 +213,10 @@ onUnmounted(() => {
                 <el-button class="cyber-btn back-btn" @click="router.back()">
                     <el-icon><ArrowLeft /></el-icon> 安全退出
                 </el-button>
+                <!-- 查看日志按钮 -->
+                <el-button class="cyber-btn" @click="router.push({ path: '/dashboard/teacher/score/report', query: { examId: examId } })">
+                    <el-icon><Monitor /></el-icon> 监考日志
+                </el-button>
                 <div class="title-box">
                     <h1>{{ examTitle }}</h1>
                     <div class="live-indicator">
@@ -236,7 +235,7 @@ onUnmounted(() => {
                 <div class="card-icon"><el-icon><Monitor /></el-icon></div>
                 <div class="card-content">
                     <span class="label">应考总人数</span>
-                    <span class="value">{{ stats.total }}</span>
+                    <span class="value">{{ stats.total || '-' }}</span>
                 </div>
             </div>
             <div class="data-card green">
@@ -269,6 +268,7 @@ onUnmounted(() => {
                 :key="student.id"
                 class="cyber-card"
                 :class="[student.status, { 'warning-state': student.warningCount > 0 }]"
+                @click="handleForceSubmit(student)"
             >
                 <div class="card-inner">
                     <div class="avatar-box">
@@ -277,10 +277,9 @@ onUnmounted(() => {
                     </div>
                     <div class="info-box">
                         <div class="name">{{ student.name }}</div>
-                        <div class="id">学号: {{ student.id }}</div>
+                        <div class="id">ID: {{ student.id }}</div>
                     </div>
                     
-                    <!-- 进度条区域：仅当未交卷时显示 -->
                     <div class="progress-box" v-if="student.status !== 'submitted'">
                         <div class="bar-bg">
                             <div 
@@ -289,20 +288,17 @@ onUnmounted(() => {
                             ></div>
                         </div>
                         <div class="bar-text">
-                            进度: {{ student.progress }}/{{ student.totalQuestions || '-' }}
+                            {{ student.progress }}/{{ student.totalQuestions || '-' }}
                         </div>
                     </div>
-                    <!-- 交卷状态：显示提交成功 -->
                     <div class="submitted-box" v-else>
-                        <el-icon color="#67C23A" size="20"><CircleCheck /></el-icon>
-                        <span>提交成功</span>
+                        <el-icon color="#67C23A"><CircleCheck /></el-icon>
                     </div>
 
                     <div class="alert-badge" v-if="student.warningCount > 0">
                         <el-icon><Bell /></el-icon> {{ student.warningCount }}
                     </div>
                 </div>
-                <!-- 扫描线动画 -->
                 <div class="scan-line"></div>
             </div>
         </main>
@@ -310,14 +306,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 全局变量 */
 :root {
     --cyber-bg: #050b14;
     --cyber-blue: #00f3ff;
     --cyber-green: #00ff9d;
     --cyber-red: #ff0055;
     --cyber-yellow: #fcee0a;
-    --panel-bg: rgba(10, 25, 41, 0.7);
 }
 
 .monitor-screen {
@@ -325,7 +319,7 @@ onUnmounted(() => {
     top: 0; left: 0; width: 100vw; height: 100vh;
     background-color: #050b14;
     color: #fff;
-    z-index: 9999; /* 覆盖原有布局 */
+    z-index: 9999;
     display: flex;
     flex-direction: column;
     padding: 20px;
@@ -334,7 +328,6 @@ onUnmounted(() => {
     overflow: hidden;
 }
 
-/* 背景网格特效 */
 .grid-bg {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     background-image: 
@@ -345,7 +338,6 @@ onUnmounted(() => {
     pointer-events: none;
 }
 
-/* 顶部 HUD */
 .hud-header {
     display: flex; justify-content: space-between; align-items: center;
     border-bottom: 1px solid rgba(0, 243, 255, 0.3);
@@ -370,7 +362,6 @@ onUnmounted(() => {
     color: #00f3ff; text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
 }
 
-/* 赛博按钮 */
 .cyber-btn {
     background: transparent;
     border: 1px solid rgba(0, 243, 255, 0.5);
@@ -384,7 +375,6 @@ onUnmounted(() => {
     border-color: #00f3ff;
 }
 
-/* 仪表盘 */
 .dashboard-panel {
     display: flex; gap: 20px; margin-bottom: 30px;
 }
@@ -415,7 +405,6 @@ onUnmounted(() => {
 .card-content .label { font-size: 12px; text-transform: uppercase; color: rgba(255,255,255,0.5); letter-spacing: 1px; }
 .card-content .value { font-size: 28px; font-weight: bold; font-family: 'Courier New', monospace; }
 
-/* 监控矩阵 */
 .monitor-grid {
     flex: 1;
     display: grid;
@@ -424,11 +413,9 @@ onUnmounted(() => {
     overflow-y: auto;
     padding-right: 5px;
 }
-/* 隐藏滚动条 */
 .monitor-grid::-webkit-scrollbar { width: 4px; }
 .monitor-grid::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.2); }
 
-/* 赛博卡片 */
 .cyber-card {
     position: relative;
     background: rgba(10, 25, 41, 0.6);
@@ -436,16 +423,14 @@ onUnmounted(() => {
     height: 100px;
     display: flex; align-items: center; padding: 0 15px;
     transition: all 0.3s;
-    cursor: default;
+    cursor: pointer;
 }
-/* 角标装饰 */
 .cyber-card::after {
     content: ''; position: absolute; top: 0; right: 0;
     border-top: 10px solid rgba(0, 243, 255, 0.5);
     border-left: 10px solid transparent;
 }
 
-/* 状态样式 */
 .cyber-card.online { 
     border-color: #00ff9d; 
     box-shadow: inset 0 0 15px rgba(0, 255, 157, 0.1); 
@@ -457,18 +442,14 @@ onUnmounted(() => {
     background: rgba(0, 255, 157, 0.05); 
     border-color: rgba(255, 255, 255, 0.2);
 }
-.cyber-card.submitted .name { color: #909399; } /* 名字变暗 */
+.cyber-card.submitted .name { color: #909399; }
 
 .submitted-box {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    font-size: 16px;
-    font-weight: bold;
     color: #67C23A;
-    text-shadow: 0 0 10px rgba(103, 194, 58, 0.3);
 }
 
 .cyber-card.warning-state { 
@@ -491,14 +472,13 @@ onUnmounted(() => {
 .submitted .status-ring { border-top-color: #00ff9d; border-right-color: #00ff9d; animation: none; border: 2px solid #00ff9d; }
 .warning-state .status-ring { border-top-color: #ff0055; border-bottom-color: #ff0055; animation-duration: 0.5s; }
 
-.info-box { flex: 1; }
-.info-box .name { font-weight: bold; font-size: 16px; color: #fff; }
+.info-box { flex: 1; overflow: hidden; }
+.info-box .name { font-weight: bold; font-size: 16px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .info-box .id { font-size: 12px; color: rgba(255,255,255,0.4); }
 
 .progress-box { width: 60px; text-align: right; }
 .bar-bg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); margin-bottom: 4px; }
 .bar-fill { height: 100%; background: #00f3ff; transition: width 0.5s; box-shadow: 0 0 5px #00f3ff; }
-.bar-full { background: #00ff9d; box-shadow: 0 0 5px #00ff9d; }
 .bar-text { font-size: 12px; color: rgba(0, 243, 255, 0.8); font-family: monospace; }
 
 .alert-badge {
@@ -510,7 +490,6 @@ onUnmounted(() => {
     z-index: 2;
 }
 
-/* 扫描线动画 */
 .scan-line {
     position: absolute; top: 0; left: 0; width: 100%; height: 2px;
     background: rgba(0, 243, 255, 0.3);
@@ -525,5 +504,4 @@ onUnmounted(() => {
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
 @keyframes shake { 0% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } 100% { transform: translateX(0); } }
-
 </style>

@@ -6,11 +6,37 @@ import { Clock, List, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { enterExam, submitExam } from '@/api/exam'
 import { useUserStore } from '@/stores/user'
 import { useExamStore } from '@/stores/exam'
+import { useAiMonitor } from '@/utils/useAiMonitor'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const examStore = useExamStore()
+
+// AI Monitor Refs
+const { videoEl, isMonitoring, status: aiStatus, warningMsg, loadModels, startCamera, stopMonitor, updateConfig, onWarning, takeSnapshot } = useAiMonitor()
+const videoRef = ref(null)
+
+// 监听 AI 报警并上报 (联调适配版)
+onWarning(async (alert) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        // 使用纯 ID
+        const sid = userStore.userInfo.id.toString().replace(/^[ST]_/, '')
+        const snapshotRes = await takeSnapshot(examInfo.id, sid, alert.type)
+        const snapshotUrl = snapshotRes?.data || snapshotRes 
+        
+        ws.send(JSON.stringify({ 
+            type: 'CHEAT_WARNING', 
+            data: {
+                studentId: sid,
+                alertType: alert.type, 
+                message: alert.msg,
+                snapshotUrl: snapshotUrl, 
+                time: alert.timestamp
+            } 
+        }))
+    }
+})
 
 const loading = ref(false)
 const timer = ref(null)
@@ -179,6 +205,25 @@ const loadPaper = async () => {
 
     const res = await enterExam(examInfo.id)
     const data = res 
+
+    // 初始化 AI 监考 (开发调试：强制开启)
+    const debugMode = true
+    if ((data.enableAiMonitor || debugMode) && !isMobile.value) {
+        const config = data.monitorConfig ? (typeof data.monitorConfig === 'string' ? JSON.parse(data.monitorConfig) : data.monitorConfig) : {}
+        
+        updateConfig({
+            interval: 1000,
+            faceCountLimit: 1,
+            allowBlur: true // 开启视线追踪测试
+        })
+        
+        await loadModels()
+        // 确保 DOM 渲染后再启动摄像头
+        setTimeout(() => {
+            // 传递 Ref 对象，让 hook 内部去轮询 value
+            startCamera(videoRef) 
+        }, 1000)
+    }
 
     if (data && data.questions) {
       const rawQuestions = data.questions || []
@@ -372,13 +417,13 @@ const handleSubmit = (isAuto = false) => {
 
 // WebSocket Logic
 const initWebSocket = () => {
-    // 仅正式考试连接监控，练习模式跳过
     if (examInfo.id === 'practice') return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    // 严格对标规范：/ws/exam/{examId}/{userId}
-    const wsUrl = `${protocol}//${host}/ws/exam/${examInfo.id}/${userStore.userInfo.id}`
+    // 移除 S_ 前缀，使用纯 ID
+    const studentIdStr = userStore.userInfo.id.toString().replace(/^[ST]_/, '')
+    const wsUrl = `${protocol}//${host}/ws/exam/${examInfo.id}/${studentIdStr}`
     
     ws = new WebSocket(wsUrl)
     
@@ -398,9 +443,10 @@ const initWebSocket = () => {
         try {
             const msg = JSON.parse(event.data)
             if (msg.type === 'FORCE_SUBMIT') {
-                ElMessageBox.alert('您已被老师强制收卷！', '考试结束', {
+                ElMessageBox.alert(msg.reason || '您已被老师强制收卷，考试即刻终止！', '严重警告', {
                     confirmButtonText: '确定',
-                    callback: () => handleSubmit(true) // 自动提交
+                    type: 'error',
+                    callback: () => handleSubmit(true) // 立即强制交卷
                 })
             } else if (msg.type === 'REMIND') {
                 ElNotification({
@@ -456,6 +502,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopMonitor() // 停止 AI 监考
   window.removeEventListener('resize', checkMobile)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (timer.value) clearInterval(timer.value)
@@ -681,6 +728,15 @@ onBeforeUnmount(() => {
           </div>
         </div>
     </el-drawer>
+
+    <!-- AI Monitor Floating Window -->
+    <div v-if="isMonitoring" class="monitor-window" :class="{ 'warning': warningMsg }">
+        <video ref="videoRef" autoplay muted playsinline></video>
+        <div class="status-badge">
+            <div class="dot" :class="warningMsg ? 'red' : 'green'"></div>
+            {{ warningMsg || '监考中' }}
+        </div>
+    </div>
   </div>
 </template>
 
@@ -887,4 +943,51 @@ onBeforeUnmount(() => {
         position: relative;
     }
 }
+
+/* Monitor Window */
+.monitor-window {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 160px;
+    height: 120px;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    z-index: 2000;
+    border: 2px solid #67C23A;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.monitor-window.warning {
+    border-color: #F56C6C;
+    box-shadow: 0 0 20px rgba(245, 108, 108, 0.4);
+    transform: scale(1.05);
+}
+.monitor-window video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+.status-badge {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    color: #fff;
+    font-size: 11px;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.status-badge .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+}
+.status-badge .dot.green { background: #67C23A; box-shadow: 0 0 6px #67C23A; }
+.status-badge .dot.red { background: #F56C6C; box-shadow: 0 0 6px #F56C6C; animation: blink 1s infinite; }
+
+@keyframes blink { 50% { opacity: 0.3; } }
 </style>

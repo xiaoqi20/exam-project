@@ -1,12 +1,12 @@
 <script setup>
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ArrowDown, User, SwitchButton, Fold, Expand } from '@element-plus/icons-vue'
 import { ElMessageBox, ElNotification } from 'element-plus'
 import { defineEmits, defineProps, onMounted, onUnmounted, ref } from 'vue'
 import { getExamPaperList } from '@/api/examPaper'
 import NotifyBell from '@/components/NotifyBell.vue'
-import { useNotifyStore } from '@/stores/notify' // 可选：用于测试
+import { useNotifyStore } from '@/stores/notify'
 
 const props = defineProps({
   isCollapse: {
@@ -18,6 +18,7 @@ const props = defineProps({
 const emit = defineEmits(['toggle-sidebar'])
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const defaultAvatar = 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png'
 
@@ -32,8 +33,6 @@ const startPolling = () => {
 
   const checkNewExams = async () => {
     try {
-      // Check latest 10 exams, add timestamp to prevent caching
-      // Try 'id' desc sort if backend supports it (common convention)
       const res = await getExamPaperList({ 
           page: 1, 
           size: 10, 
@@ -109,12 +108,14 @@ const handleCommand = (command) => {
 <template>
   <div class="navbar">
     <div class="left-side">
-      <div class="hamburger-container" @click="toggleSidebar">
+      <!-- Only show hamburger if sidebar is not globally hidden for this route -->
+      <div v-if="!route.meta.hiddenSidebar" class="hamburger-container" @click="toggleSidebar">
         <el-icon :size="20">
           <Expand v-if="isCollapse" />
           <Fold v-else />
         </el-icon>
       </div>
+      <div v-else class="logo-text-simple">智考后台系统</div>
     </div>
 
     <div class="right-side">
@@ -172,6 +173,13 @@ const handleCommand = (command) => {
 
 .hamburger-container:hover {
   background: rgba(0, 0, 0, .025)
+}
+
+.logo-text-simple {
+  font-weight: bold;
+  font-size: 18px;
+  color: #303133;
+  margin-left: 10px;
 }
 
 .right-side {

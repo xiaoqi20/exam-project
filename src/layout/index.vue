@@ -54,11 +54,12 @@ onBeforeUnmount(() => {
 
 <template>
   <el-container class="app-wrapper">
-    <!-- Desktop Sidebar (Hidden on Mobile) -->
-    <Sidebar v-if="!isMobile" :is-collapse="isCollapse" class="desktop-sidebar" />
+    <!-- Desktop Sidebar (Hidden on Mobile OR if route requests hidden sidebar) -->
+    <Sidebar v-if="!isMobile && !route.meta.hiddenSidebar" :is-collapse="isCollapse" class="desktop-sidebar" />
 
     <!-- Mobile Drawer -->
     <el-drawer
+      v-if="!route.meta.hiddenSidebar"
       v-model="drawerVisible"
       direction="ltr"
       :with-header="false"
@@ -70,7 +71,7 @@ onBeforeUnmount(() => {
       <Sidebar :is-collapse="false" />
     </el-drawer>
 
-    <el-container class="main-container">
+    <el-container class="main-container" :class="{ 'full-width': route.meta.hiddenSidebar }">
       <el-header height="50px" style="padding: 0">
         <Navbar :is-collapse="isCollapse" :is-mobile="isMobile" @toggle-sidebar="toggleSidebar" />
       </el-header>
@@ -95,7 +96,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   background-color: #f0f2f5;
   height: 100vh;
-  overflow: hidden; /* Ensure scroll is handled by app-main */
+  overflow: hidden; 
+  transition: margin-left 0.28s;
+}
+
+.main-container.full-width {
+  margin-left: 0 !important;
+  width: 100% !important;
 }
 
 .app-main {

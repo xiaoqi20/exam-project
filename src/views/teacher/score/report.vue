@@ -1,310 +1,315 @@
 <script setup>
-import { ref, onMounted, computed, nextTick, onUnmounted } from 'vue'
-import * as echarts from 'echarts'
-import { getExamPaperList } from '@/api/examPaper'
-import { getPaperScoreList } from '@/api/score' 
-import { ElMessage } from 'element-plus'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import { 
+    Warning, Timer, CircleCheck, VideoCamera, User, InfoFilled, Picture
+} from '@element-plus/icons-vue'
+import request from '@/utils/request'
+import { getExamPaperDetail } from '@/api/examPaper'
 
-// --- Data ---
-const examList = ref([]) 
-const selectedExamId = ref(null)
-const loading = ref(false)
-const reportData = ref(null) 
-const scoreList = ref([])    
+const route = useRoute()
+const examId = route.query.examId
+const examTitle = ref('加载中...')
+const onlineCount = ref(0)
+const alertCount = ref(0)
 
-const chartRef = ref(null)
-let myChart = null
-
-// --- Methods ---
-
-// 1. Load Exams for Dropdown
-const loadExams = async () => {
-  try {
-    const res = await getExamPaperList({ page: 1, size: 100 })
-    console.log('Report: Loaded Exams:', res)
-    if (res && res.records) {
-      examList.value = res.records.map(item => ({
-        id: item.paperId || item.id,
-        title: item.title,
-        status: item.status,
-        totalScore: item.totalMark || item.totalScore || 100
-      }))
-    }
-  } catch (e) {
-    console.error('Failed to load exams', e)
-  }
+// 异常类型翻译
+const typeLabelMap = {
+    'MISSING': '离开座位',
+    'MULTIPLE_FACES': '多人同框',
+    'POSE': '视线偏移',
+    'switch_screen': '切屏警告'
 }
 
-// 2. Process Real Data
-const processData = (data, totalScore = 100) => {
-  const totalStudents = data.length
-  if (totalStudents === 0) return null
+// 全局事件流数据
+const timeline = ref([])
 
-  let sum = 0
-  let max = 0
-  let min = totalScore
-  let passCount = 0
-  const passScore = totalScore * 0.6
+// Mock 数据 (兜底用)
+const mockFallbackData = [
+    { id: 0, time: '10:00:00', type: 'start', title: '考试正式开始', desc: '全班考生已进入考场', level: 'info' },
+    { id: 101, name: '演示用户', type: 'alert', level: 'danger', title: '多人同框', desc: '系统检测到画面异常（此为演示数据）', time: '10:05:00' }
+]
 
-  const list = data.map(item => {
-      const score = item.score || 0
-      sum += score
-      if (score > max) max = score
-      if (score < min) min = score
-      if (score >= passScore) passCount++
-      
-      return {
-          studentId: item.studentId || item.stuId,
-          name: item.name || item.sname || item.studentName,
-          score: score
-      }
-  })
-  
-  // Sort by score desc
-  list.sort((a, b) => b.score - a.score)
-
-  return {
-    overview: {
-      total: totalStudents,
-      avg: (sum / totalStudents).toFixed(1),
-      max,
-      min,
-      passRate: ((passCount / totalStudents) * 100).toFixed(1) + '%'
-    },
-    list
-  }
-}
-
-// 4. ECharts Logic
-const initChart = () => {
-  if (!chartRef.value) return
-  if (myChart) myChart.dispose()
-
-  myChart = echarts.init(chartRef.value)
-  
-  const segments = {
-    '90-100': 0,
-    '80-89': 0,
-    '70-79': 0,
-    '60-69': 0,
-    '不及格': 0
-  }
-  
-  scoreList.value.forEach(item => {
-    if (item.score >= 90) segments['90-100']++
-    else if (item.score >= 80) segments['80-89']++
-    else if (item.score >= 70) segments['70-79']++
-    else if (item.score >= 60) segments['60-69']++
-    else segments['不及格']++
-  })
-
-  const option = {
-    title: { text: '成绩段分布', left: 'center' },
-    tooltip: { trigger: 'item' },
-    xAxis: {
-      type: 'category',
-      data: Object.keys(segments),
-      axisLabel: { interval: 0 } // Force show all labels
-    },
-    yAxis: {
-      type: 'value'
-    },
-    grid: {
-        left: '10%',
-        right: '5%',
-        bottom: '10%',
-        containLabel: true
-    },
-    series: [
-      {
-        data: Object.values(segments),
-        type: 'bar',
-        itemStyle: {
-          color: (params) => {
-            if (params.name === '不及格') return '#F56C6C'
-            if (params.name === '90-100') return '#67C23A'
-            return '#409EFF'
-          }
-        },
-        label: {
-          show: true,
-          position: 'top'
+// 加载试卷基础信息
+const loadExamInfo = async () => {
+    if (!examId) return
+    try {
+        const res = await getExamPaperDetail(examId)
+        if (res) {
+            examTitle.value = res.title || '在线考试'
         }
-      }
-    ]
-  }
-  
-  myChart.setOption(option)
+    } catch (e) {
+        console.error('获取试卷标题失败', e)
+        examTitle.value = '未知考试'
+    }
 }
 
-// 3. Handle Exam Change
-const handleExamChange = async () => {
-  if (!selectedExamId.value) return
-  
-  loading.value = true
-  try {
-    const exam = examList.value.find(e => e.id === selectedExamId.value)
-    const res = await getPaperScoreList(selectedExamId.value)
-    console.log('API Score List:', res)
+// 加载真实日志数据
+const loadLogs = async () => {
+    if (!examId) {
+        timeline.value = mockFallbackData
+        return
+    }
 
-    if (res && (res.data || Array.isArray(res))) {
-        const rawList = Array.isArray(res) ? res : (res.data || [])
-        const processed = processData(rawList, exam ? (exam.totalScore || 100) : 100)
+    try {
+        console.log('正在加载日志，ExamID:', examId)
+        const res = await request.get('/exam/monitor/logs', { params: { examId } })
         
-        if (processed) {
-            reportData.value = processed.overview
-            scoreList.value = processed.list
-            nextTick(() => {
-                initChart()
-            })
+        if (res && Array.isArray(res) && res.length > 0) {
+            timeline.value = res.map((log, index) => ({
+                id: log.id,
+                name: log.studentName || log.userId || '未知考生',
+                type: 'alert', 
+                level: (log.alertType === 'MULTIPLE_FACES' || log.alertType === 'danger') ? 'danger' : 'warning',
+                title: typeLabelMap[log.alertType] || log.alertType, 
+                desc: log.description || log.message || '触发了监考预警',
+                snapshot: log.snapshotUrl,
+                time: log.createTime ? new Date(log.createTime).toLocaleTimeString() : '未知时间',
+                side: index % 2 === 0 ? 'left' : 'right'
+            }))
+            alertCount.value = timeline.value.length
         } else {
-            reportData.value = null
-            ElMessage.info('暂无考试数据')
+            console.warn('后端无数据，使用 Mock 数据展示')
+            timeline.value = mockFallbackData
         }
-    } else {
-        reportData.value = null
-        ElMessage.info('暂无考试数据')
+    } catch (e) {
+        console.error('获取日志失败，切换 Mock:', e)
+        timeline.value = mockFallbackData
     }
-  } catch (e) {
-      console.error(e)
-      ElMessage.error('获取成绩失败')
-  } finally {
-      loading.value = false
-  }
-}
-
-// Resize chart on window resize
-const handleResize = () => {
-  myChart && myChart.resize()
 }
 
 onMounted(() => {
-  loadExams()
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-  if (myChart) myChart.dispose()
+    loadExamInfo()
+    loadLogs()
 })
 </script>
 
 <template>
-  <div class="app-container">
-    <!-- Header: Select Exam -->
-    <el-card shadow="never" class="header-card">
-      <div class="header-row">
-        <span class="label">选择试卷：</span>
-        <el-select 
-          v-model="selectedExamId" 
-          placeholder="请选择试卷" 
-          style="width: 100%; max-width: 300px;"
-          @change="handleExamChange"
-          filterable
-        >
-          <el-option 
-            v-for="item in examList" 
-            :key="item.id" 
-            :label="item.title" 
-            :value="item.id" 
-          />
-        </el-select>
-      </div>
-    </el-card>
-
-    <div v-if="reportData" v-loading="loading">
-      <!-- Statistics Cards -->
-      <el-row :gutter="10" style="margin-top: 20px">
-        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
-          <el-card shadow="hover">
-            <template #header>参考人数</template>
-            <div class="stat-value">{{ reportData.total }}</div>
-          </el-card>
-        </el-col>
-        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
-          <el-card shadow="hover">
-            <template #header>平均分</template>
-            <div class="stat-value" style="color: #409EFF">{{ reportData.avg }}</div>
-          </el-card>
-        </el-col>
-        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
-          <el-card shadow="hover">
-            <template #header>及格率</template>
-            <div class="stat-value" style="color: #67C23A">{{ reportData.passRate }}</div>
-          </el-card>
-        </el-col>
-        <el-col :span="6" :xs="12" :sm="12" class="mb-10">
-          <el-card shadow="hover">
-            <template #header>最高/最低</template>
-            <div class="stat-value small-text">
-              <span style="color: #67C23A">{{ reportData.max }}</span> / 
-              <span style="color: #F56C6C">{{ reportData.min }}</span>
+    <div class="monitor-page">
+        <!-- 顶部信息栏 -->
+        <div class="header-bar">
+            <div class="title-section">
+                <h2>{{ examTitle }}</h2>
+                <el-tag type="success" size="small" effect="plain">正在监考</el-tag>
             </div>
-          </el-card>
-        </el-col>
-      </el-row>
+            <div class="status-section">
+                <div class="status-item">
+                    <span class="label">应考人数</span>
+                    <span class="val">--</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">当前在线</span>
+                    <span class="val">{{ onlineCount }}</span>
+                </div>
+                <div class="status-item danger">
+                    <span class="label">异常提醒</span>
+                    <span class="val">{{ alertCount }}</span>
+                </div>
+            </div>
+        </div>
 
-      <!-- Chart & Table -->
-      <el-row :gutter="20" style="margin-top: 10px">
-        <!-- Left: Chart -->
-        <el-col :span="12" :xs="24" class="mb-20">
-          <el-card shadow="hover">
-            <div ref="chartRef" style="height: 350px; width: 100%"></div>
-          </el-card>
-        </el-col>
-        
-        <!-- Right: Detail Table -->
-        <el-col :span="12" :xs="24">
-          <el-card shadow="hover" style="height: 400px; overflow: hidden; display: flex; flex-direction: column;">
-            <template #header>成绩排名</template>
-            <el-table :data="scoreList" stripe size="small" height="100%" style="width: 100%">
-              <el-table-column type="index" label="排名" width="50" align="center" />
-              <el-table-column prop="name" label="姓名" min-width="80" show-overflow-tooltip />
-              <el-table-column prop="studentId" label="学号" min-width="100" show-overflow-tooltip />
-              <el-table-column prop="score" label="分数" width="60" align="center" sortable>
-                <template #default="{ row }">
-                  <span :class="row.score < 60 ? 'score-fail' : 'score-pass'">
-                    {{ row.score }}
-                  </span>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-card>
-        </el-col>
-      </el-row>
+        <!-- 居中时间轴容器 -->
+        <div class="timeline-container">
+            <!-- 粗实线中轴 -->
+            <div class="vertical-axis"></div>
+
+            <div class="timeline-list">
+                <div 
+                    v-for="item in timeline" 
+                    :key="item.id" 
+                    class="timeline-item" 
+                    :class="item.side || 'center'"
+                >
+                    <!-- 中间的指示圆点 -->
+                    <div class="axis-node" :class="item.level">
+                        <el-icon v-if="item.type === 'alert'"><Warning /></el-icon>
+                        <el-icon v-else-if="item.type === 'submit'"><CircleCheck /></el-icon>
+                        <el-icon v-else><Timer /></el-icon>
+                    </div>
+
+                    <!-- 侧边内容卡片 -->
+                    <div class="content-card">
+                        <div class="card-time">{{ item.time }}</div>
+                        <div class="card-main">
+                            <div class="student-info">
+                                <el-icon><User /></el-icon>
+                                <strong>{{ item.name || '系统' }}</strong>
+                                <el-tag :type="item.level" size="small" style="margin-left: 8px">{{ item.title }}</el-tag>
+                            </div>
+                            <div class="event-desc">{{ item.desc }}</div>
+                            <div v-if="item.snapshot" class="snapshot-preview">
+                                <el-image 
+                                    :src="item.snapshot" 
+                                    :preview-src-list="[item.snapshot]"
+                                    fit="cover"
+                                    class="evidence-img"
+                                >
+                                    <template #error>
+                                        <div class="img-error">
+                                            <el-icon><Picture /></el-icon>
+                                            <span>图片加载失败</span>
+                                        </div>
+                                    </template>
+                                </el-image>
+                                <div class="snap-label">AI 抓拍存证</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    
-    <el-empty v-else description="请选择一场考试以查看报表" style="margin-top: 50px" />
-  </div>
 </template>
 
 <style scoped>
-.app-container { padding: 20px; }
-.header-card { display: flex; align-items: center; }
-.header-row { display: flex; align-items: center; font-size: 16px; font-weight: bold; width: 100%; }
-.header-row .label { white-space: nowrap; margin-right: 10px; }
+.monitor-page {
+    background: #f5f7fa;
+    min-height: 100vh;
+    padding: 30px;
+}
 
-.stat-value { font-size: 24px; font-weight: bold; text-align: center; }
-.small-text { font-size: 20px; } /* Smaller font for Max/Min on mobile */
+/* Header */
+.header-bar {
+    max-width: 1100px;
+    margin: 0 auto 50px;
+    background: #fff;
+    padding: 20px 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.title-section h2 { margin: 0 0 5px; font-size: 18px; color: #303133; }
+.status-section { display: flex; gap: 30px; }
+.status-item { text-align: center; }
+.status-item .label { font-size: 12px; color: #909399; display: block; margin-bottom: 5px; }
+.status-item .val { font-size: 24px; font-weight: bold; color: #303133; }
+.status-item.danger .val { color: #F56C6C; }
 
-.score-pass { color: #67C23A; font-weight: bold; }
-.score-fail { color: #F56C6C; font-weight: bold; }
+/* Timeline Core */
+.timeline-container {
+    position: relative;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding-top: 20px;
+}
 
-.mb-10 { margin-bottom: 10px; }
-.mb-20 { margin-bottom: 20px; }
+.vertical-axis {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: #dcdfe6;
+    transform: translateX(-50%);
+    z-index: 1;
+}
 
-/* Mobile Adjustments */
-@media (max-width: 768px) {
-    .app-container { padding: 10px; }
-    
-    /* Header Card */
-    .header-card :deep(.el-card__body) { padding: 15px; }
-    .header-row { flex-direction: column; align-items: flex-start; gap: 10px; }
-    .header-row .label { margin-bottom: 5px; }
-    .header-row .el-select { max-width: 100% !important; }
+.timeline-list {
+    position: relative;
+    z-index: 2;
+}
 
-    /* Stats */
-    .stat-value { font-size: 20px; }
-    .small-text { font-size: 16px; }
+.timeline-item {
+    display: flex;
+    width: 100%;
+    margin-bottom: 25px;
+    position: relative;
+}
+
+/* 中间圆点 */
+.axis-node {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #dcdfe6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #909399;
+    z-index: 3;
+    font-size: 14px;
+}
+.axis-node.warning { border-color: #E6A23C; color: #E6A23C; }
+.axis-node.danger { border-color: #F56C6C; color: #F56C6C; }
+.axis-node.success { border-color: #67C23A; color: #67C23A; }
+
+/* 卡片容器 */
+.content-card {
+    width: 44%;
+    background: #fff;
+    border: 1px solid #ebeef5;
+    border-radius: 8px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.card-time {
+    font-family: monospace;
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 4px;
+}
+
+.student-info { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.student-info strong { color: #334155; font-size: 14px; }
+
+.event-desc {
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+.snapshot-preview {
+    margin-top: 10px;
+    border: 1px solid #f1f5f9;
+    border-radius: 6px;
+    overflow: hidden;
+    width: 160px;
+}
+.evidence-img { 
+    width: 100%; 
+    height: 100px;
+    display: block; 
+}
+.img-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100px;
+    background: #f8fafc;
+    color: #94a3b8;
+    font-size: 10px;
+}
+.snap-label {
+    background: #f8fafc;
+    padding: 3px 8px;
+    font-size: 10px;
+    color: #94a3b8;
+    border-top: 1px solid #f1f5f9;
+}
+
+/* 左右分布逻辑 */
+.timeline-item.left { justify-content: flex-start; }
+.timeline-item.left .content-card { text-align: right; }
+.timeline-item.left .student-info { flex-direction: row-reverse; }
+
+.timeline-item.right { justify-content: flex-end; }
+
+/* 中间提示 (如开始考试) */
+.timeline-item.center { justify-content: center; }
+.timeline-item.center .axis-node { display: none; }
+.timeline-item.center .content-card {
+    width: auto;
+    min-width: 300px;
+    text-align: center;
+    border-color: #dcdfe6;
+    background: #fcfcfc;
 }
 </style>

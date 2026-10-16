@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Plus, Delete, ArrowRight, ArrowLeft } from '@element-plus/icons-vue'
+import { Search, Plus, Delete, ArrowRight, ArrowLeft, InfoFilled, VideoCamera } from '@element-plus/icons-vue'
 import { getQuestionList } from '@/api/question'
 import { createExamPaper, addQuestionsToPaper, publishExamPaper } from '@/api/examPaper'
 import { getAllClasses } from '@/api/class'
@@ -26,7 +26,19 @@ onMounted(async () => {
 const baseForm = reactive({
   title: '',
   duration: 90,
-  totalScore: 0 
+  totalScore: 0,
+  // 防作弊配置
+  enableAiMonitor: false,
+  monitorConfig: {
+      captureInterval: 30,
+      faceCountLimit: 1,   // 多人检测
+      allowBlur: false,     // 视线追踪
+      allowCopy: false,     // 是否允许复制
+      enableScreenLock: true, // 是否检测切屏
+      maxScreenSwitches: 3, // 最大切屏次数
+      enableFaceIdentity: true, // 是否开启人脸识别(身份核验)
+      enableSnapshot: true  // 是否页面抓拍
+  }
 })
 const baseFormRef = ref(null)
 const baseRules = {
@@ -208,17 +220,107 @@ onMounted(async () => {
         <!-- Step 1: Info -->
         <div v-show="activeStep === 0" class="step-content">
             <el-form ref="baseFormRef" :model="baseForm" :rules="baseRules" label-width="100px" class="base-form">
-                <el-form-item label="试卷名称" prop="title">
-                    <el-input v-model="baseForm.title" placeholder="例如：2024期末考试" />
-                </el-form-item>
-                <el-form-item label="考试时长" prop="duration">
-                    <el-input-number v-model="baseForm.duration" :min="10" :step="10" style="width: 100%" />
-                    <span class="unit hidden-mobile">分钟</span>
-                </el-form-item>
-                <el-form-item label="预计总分">
-                    <span class="total-score">{{ baseForm.totalScore }} 分</span>
-                    <span class="tips">（将在选择题目后自动计算）</span>
-                </el-form-item>
+                <div class="config-section">
+                    <div class="section-title">基础设置</div>
+                    <el-form-item label="试卷名称" prop="title">
+                        <el-input v-model="baseForm.title" placeholder="例如：Java程序设计期末考试" />
+                    </el-form-item>
+                    <el-form-item label="考试时长" prop="duration">
+                        <el-input-number v-model="baseForm.duration" :min="10" :step="10" style="width: 180px" />
+                        <span class="unit">分钟</span>
+                    </el-form-item>
+                </div>
+
+                <div class="monitor-card" :class="{ 'is-active': baseForm.enableAiMonitor }">
+                    <div class="card-header">
+                        <div class="header-left">
+                            <div class="icon-box">
+                                <el-icon><VideoCamera /></el-icon>
+                            </div>
+                            <div class="header-text">
+                                <span class="title">智能监考系统</span>
+                                <span class="subtitle">实时监测考生行为，自动预警异常</span>
+                            </div>
+                        </div>
+                        <el-switch v-model="baseForm.enableAiMonitor" />
+                    </div>
+                    
+                    <transition name="smooth-expand">
+                        <div v-if="baseForm.enableAiMonitor" class="card-body-wrapper">
+                            <div class="card-body">
+                                <!-- 第一组：AI 视觉监考 -->
+                                <div class="config-group">
+                                    <div class="group-label">AI 视觉监考</div>
+                                    <div class="options-grid">
+                                        <div class="option-item">
+                                            <div class="opt-info">
+                                                <span class="opt-name">人脸身份核验</span>
+                                                <span class="opt-desc">开考前通过人脸比对确认考生身份</span>
+                                            </div>
+                                            <el-switch v-model="baseForm.monitorConfig.enableFaceIdentity" size="small" />
+                                        </div>
+                                        <div class="option-item">
+                                            <div class="opt-info">
+                                                <span class="opt-name">多人同框检测</span>
+                                                <span class="opt-desc">识别画面中是否出现多张人脸</span>
+                                            </div>
+                                            <el-switch v-model="baseForm.monitorConfig.faceCountLimit" :active-value="1" :inactive-value="0" size="small" />
+                                        </div>
+                                        <div class="option-item">
+                                            <div class="opt-info">
+                                                <span class="opt-name">视线追踪</span>
+                                                <span class="opt-desc">监测视线是否长时间离开屏幕</span>
+                                            </div>
+                                            <el-switch v-model="baseForm.monitorConfig.allowBlur" size="small" />
+                                        </div>
+                                        <div class="option-item">
+                                            <div class="opt-info">
+                                                <span class="opt-name">随机抓拍</span>
+                                                <span class="opt-desc">监考过程中随机拍摄考生状态</span>
+                                            </div>
+                                            <el-switch v-model="baseForm.monitorConfig.enableSnapshot" size="small" />
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="setting-row mini-row" v-if="baseForm.monitorConfig.enableSnapshot">
+                                        <span class="label">抓拍频率</span>
+                                        <el-radio-group v-model="baseForm.monitorConfig.captureInterval" size="small">
+                                            <el-radio-button :label="10">高 (10s)</el-radio-button>
+                                            <el-radio-button :label="30">中 (30s)</el-radio-button>
+                                            <el-radio-button :label="60">低 (60s)</el-radio-button>
+                                        </el-radio-group>
+                                    </div>
+                                </div>
+
+                                <!-- 第二组：客户端限制 -->
+                                <div class="config-group">
+                                    <div class="group-label">客户端限制</div>
+                                    <div class="options-grid">
+                                        <div class="option-item">
+                                            <div class="opt-info">
+                                                <span class="opt-name">禁止复制粘贴</span>
+                                                <span class="opt-desc">考试区域屏蔽右键及快捷键复制</span>
+                                            </div>
+                                            <el-switch v-model="baseForm.monitorConfig.allowCopy" :active-value="false" :inactive-value="true" size="small" />
+                                        </div>
+                                        <div class="option-item">
+                                            <div class="opt-info">
+                                                <span class="opt-name">切屏检测</span>
+                                                <span class="opt-desc">记录并限制考生切换窗口的行为</span>
+                                            </div>
+                                            <el-switch v-model="baseForm.monitorConfig.enableScreenLock" size="small" />
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="setting-row mini-row" v-if="baseForm.monitorConfig.enableScreenLock">
+                                        <span class="label">最大允许切屏次数</span>
+                                        <el-input-number v-model="baseForm.monitorConfig.maxScreenSwitches" :min="1" :max="10" size="small" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </transition>
+                </div>
             </el-form>
         </div>
 
@@ -332,7 +434,125 @@ onMounted(async () => {
 .total-score { font-size: 18px; font-weight: bold; color: #409EFF; }
 .tips { color: #999; font-size: 12px; }
 
-.base-form { max-width: 500px; margin: 0 auto; }
+.base-form { max-width: 650px; margin: 0 auto; }
+
+.config-section {
+    background: #fff;
+    padding: 25px;
+    border-radius: 12px;
+    border: 1px solid #f0f0f0;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.02);
+}
+.section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 20px;
+    letter-spacing: -0.5px;
+}
+
+/* Modern Monitor Card */
+.monitor-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 20px 24px;
+    transition: all 0.3s ease;
+    margin-top: 30px;
+}
+.monitor-card.is-active {
+    border-color: #3b82f6; /* Indigo/Blue */
+    background: #f8fafc; /* Very light gray/blue */
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.header-left { display: flex; align-items: center; gap: 16px; }
+.icon-box {
+    width: 40px; height: 40px;
+    background: #eff6ff; /* Blue-50 */
+    color: #3b82f6;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+}
+.monitor-card.is-active .icon-box { background: #3b82f6; color: #fff; }
+
+.header-text { display: flex; flex-direction: column; }
+.header-text .title { font-weight: 600; color: #111827; font-size: 15px; }
+.header-text .subtitle { font-size: 13px; color: #6b7280; margin-top: 2px; }
+
+.card-body {
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* Config Groups */
+.config-group { display: flex; flex-direction: column; gap: 12px; }
+.group-label { font-size: 12px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.option-item {
+    background: #fff;
+    border: 1px solid #f3f4f6;
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.opt-info { display: flex; flex-direction: column; gap: 2px; }
+.opt-name { font-size: 14px; font-weight: 600; color: #374151; }
+.opt-desc { font-size: 12px; color: #9ca3af; }
+
+.mini-row {
+    background: #fff;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px dashed #e5e7eb;
+}
+
+/* Smooth Expand Transition */
+.smooth-expand-enter-active,
+.smooth-expand-leave-active {
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 800px; /* 增加高度限制以容纳更多内容 */
+    overflow: hidden;
+}
+.smooth-expand-enter-from,
+.smooth-expand-leave-to {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-10px);
+}
+
+.setting-row { display: flex; align-items: center; justify-content: space-between; }
+.setting-row .label { font-size: 14px; color: #4b5563; font-weight: 500; }
+
+.tags-group { display: flex; gap: 10px; }
+/* Override Element checkbox for button-like look */
+:deep(.el-checkbox.is-bordered) {
+    border-radius: 8px;
+    margin-right: 0;
+    background: #fff;
+    border-color: #e5e7eb;
+}
+:deep(.el-checkbox.is-bordered.is-checked) {
+    background: #eff6ff;
+    border-color: #3b82f6;
+}
 
 .selector-container {
     display: flex;
